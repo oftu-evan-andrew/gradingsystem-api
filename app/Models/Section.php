@@ -12,10 +12,6 @@ class Section extends Model
         return $this->belongsTo(Course::class, 'course_id');
     }
 
-    public function professor() { 
-        return $this->belongsTo(Professor::class, 'professor_id');
-    }
-
     public function students() {
         return $this->hasMany(Student::class, 'section_id');
     }

@@ -8,6 +8,8 @@ class Grade extends Model
 {
     protected $primaryKey = 'grade_id';
 
+    protected $fillable = ['submitted_at', 'submitted_by', 'last_modified_by', 'last_modified_at'];
+
     public function student() {
         return $this->belongsTo(Student::class, 'student_id');
     }
