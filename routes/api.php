@@ -1,0 +1,51 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\CourseController;
+use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\SectionController;
+use App\Http\Controllers\ProfessorController;
+use App\Http\Controllers\StudentController;
+use App\Http\Controllers\SectionSubjectController;
+use App\Http\Controllers\AttendanceRecordController;
+use App\Http\Controllers\RecitationRecordController;
+use App\Http\Controllers\QuizRecordController;
+use App\Http\Controllers\ProjectRecordController;
+use App\Http\Controllers\ClassStandingController;
+use App\Http\Controllers\PeriodicGradeController;
+use App\Http\Controllers\StudentFinalGradeController;
+use App\Http\Controllers\StudentGpaController;
+use App\Http\Controllers\AuthController;
+
+Route::get('/user', function (Request $request) {
+    return $request->user();
+})->middleware('auth:sanctum');
+
+Route::post('/auth/login', [AuthController::class, 'login']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    // Authentication
+    Route::post('/auth/register', [AuthController::class, 'register']);
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    Route::apiResource('courses', CourseController::class);
+    Route::apiResource('subjects', SubjectController::class);
+    Route::apiResource('sections', SectionController::class);
+    Route::apiResource('professors', ProfessorController::class);
+    Route::apiResource('students', StudentController::class);
+    Route::apiResource('section-subjects', SectionSubjectController::class);
+    
+    // Grading Records
+    Route::apiResource('attendance-records', AttendanceRecordController::class);
+    Route::apiResource('recitation-records', RecitationRecordController::class);
+    Route::apiResource('quiz-records', QuizRecordController::class);
+    Route::apiResource('project-records', ProjectRecordController::class);
+    
+    // Computations and Aggregations
+    Route::apiResource('class-standings', ClassStandingController::class);
+    Route::apiResource('periodic-grades', PeriodicGradeController::class);
+    Route::apiResource('student-final-grades', StudentFinalGradeController::class);
+    Route::apiResource('student-gpas', StudentGpaController::class);
+});
