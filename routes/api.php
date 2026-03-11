@@ -38,10 +38,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('section-subjects', SectionSubjectController::class);
     
     // Grading Records
-    Route::apiResource('attendance-records', AttendanceRecordController::class);
-    Route::apiResource('recitation-records', RecitationRecordController::class);
-    Route::apiResource('quiz-records', QuizRecordController::class);
-    Route::apiResource('project-records', ProjectRecordController::class);
+    Route::middleware(['can:access-professor-content'])->group(function () {
+        Route::apiResource('attendance-records', AttendanceRecordController::class);
+        Route::apiResource('recitation-records', RecitationRecordController::class);
+        Route::apiResource('quiz-records', QuizRecordController::class);
+        Route::apiResource('project-records', ProjectRecordController::class); 
+    });
+    
     
     // Computations and Aggregations
     Route::apiResource('class-standings', ClassStandingController::class);
