@@ -13,6 +13,15 @@ use Illuminate\Support\Facades\DB;
 
 class QuizRecordController extends Controller
 {
+    public function __construct() {
+        $this->middleware(function ($request, $next) {
+            if (!in_array($request->user()->role, ['professor', 'admin'])) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+            return $next($request);
+        });
+    }
+
     private function getProfessorId(): ?string
     {
         $user = Auth::user();
@@ -28,14 +37,10 @@ class QuizRecordController extends Controller
     {
         $professorId = $this->getProfessorId();
         
-        $query = QuizRecord::with(['student.user', 'sectionSubject.subject']);
+        $quizRecords = QuizRecord::with(['student.user', 'sectionSubject.subject'])
+            ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+            ->paginate(15);
         
-        if ($professorId) {
-            $query->where('professor_id', $professorId);
-        }
-        
-        $quizRecords = $query->get();
-            
         return new QuizRecordCollection($quizRecords);
     }
 
@@ -106,44 +111,26 @@ class QuizRecordController extends Controller
     public function update(UpdateQuizRecordRequest $request): JsonResponse
     {
         $professorId = $this->getProfessorId();
-        
         $validated = $request->validated();
         
-        if (isset($validated['quiz_title'])) {
-            $query = QuizRecord::whereIn('id', array_column($validated['grades'], 'quiz_record_id'));
-            
-            if ($professorId) {
-                $query->where('professor_id', $professorId);
-            }
-            
-            $query->update(['quiz_title' => $validated['quiz_title']]);
-        }
+        $recordIds = array_column($validated['grades'], 'quiz_record_id');
+        $records = QuizRecord::whereIn('id', $recordIds)
+            ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+            ->get()
+            ->keyBy('id');
         
-        $updatedIds = [];
-        
-        DB::transaction(function () use ($validated, $professorId, &$updatedIds) {
-            foreach ($validated['grades'] as $grade) {
-                $record = QuizRecord::find($grade['quiz_record_id']);
-                
-                if ($record) {
-                    if ($professorId && $record->professor_id !== $professorId) {
-                        continue;
-                    }
-                    
-                    $record->update(['rating' => $grade['rating']]);
-                    $updatedIds[] = $record->id;
+        DB::transaction(function () use ($validated, $records) { 
+            foreach ($validated['grades'] as $gradeData) { 
+                if ($record = $records->get($gradeData['quiz_record_id'])) {
+                    $record->update([
+                        'rating' => $gradeData['rating'],
+                        'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title
+                    ]);
                 }
             }
         });
         
-        $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
-            ->whereIn('id', $updatedIds)
-            ->get();
-        
-        return response()->json([
-            'message' => 'Quiz records updated successfully',
-            'data' => QuizRecordResource::collection($records),
-        ]);
+        return response()->json(['message' => 'Records updated successfully']);
     }
 
     public function destroy(int $id): JsonResponse
