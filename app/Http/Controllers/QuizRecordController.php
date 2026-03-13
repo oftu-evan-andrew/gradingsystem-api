@@ -8,20 +8,34 @@ use App\Http\Resources\QuizRecordResource;
 use App\Http\Resources\QuizRecordCollection;
 use App\Models\QuizRecord;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Routing\Controllers\Middleware;
 
-class QuizRecordController extends Controller
+class QuizRecordController extends Controller implements HasMiddleware
 {
-    public function __construct() {
-        $this->middleware(function ($request, $next) {
-            if (!in_array($request->user()->role, ['professor', 'admin'])) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-            return $next($request);
-        });
+    /**
+     * Authorization middleware - Apply middleware to restrict access.
+     * Only professors and admins can access these endpoints.
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                if (!in_array($request->user()->role, ['professor', 'admin'])) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+                return $next($request);
+            }),
+        ];
     }
 
+    /**
+     * Get the professor ID based on the authenticated user.
+     * Returns null for admins (to allow access to all records).
+     * Returns the professor's ID for professors.
+     */
     private function getProfessorId(): ?string
     {
         $user = Auth::user();
@@ -44,6 +58,12 @@ class QuizRecordController extends Controller
         return new QuizRecordCollection($quizRecords);
     }
 
+    /**
+     * Store a new quiz record or multiple records (bulk).
+     * Supports two formats:
+     * - Single: student_id, quiz_number, rating (direct fields)
+     * - Bulk: grades array with multiple student records
+     */
     public function store(StoreQuizRecordRequest $request): JsonResponse
     {
         $user = Auth::user();
@@ -52,43 +72,72 @@ class QuizRecordController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         
+        // For admins, use provided professor_id; for professors, use their own ID
         $professorId = $user->role === 'admin' 
             ? $request->input('professor_id') 
             : $user->professor->professor_id;
         
         $validated = $request->validated();
-        $grades = $validated['grades'];
-        unset($validated['grades']);
         
-        $records = DB::transaction(function () use ($validated, $grades, $professorId) {
-            $createdRecords = [];
-            
-            foreach ($grades as $grade) {
-                $record = QuizRecord::create([
-                    'student_id' => $grade['student_id'],
-                    'section_subject_id' => $validated['section_subject_id'],
-                    'professor_id' => $professorId,
-                    'grading_period' => $validated['grading_period'],
-                    'quiz_number' => $validated['quiz_number'],
-                    'quiz_title' => $validated['quiz_title'] ?? null,
-                    'rating' => $grade['rating'],
-                ]);
-                $createdRecords[] = $record;
+        // Check if bulk format (grades array) or single record
+        if (isset($validated['grades']) && is_array($validated['grades'])) {
+            $grades = $validated['grades'];
+            unset($validated['grades']);
+
+            try {
+                $records = DB::transaction(function () use ($validated, $grades, $professorId) {
+                $createdRecords = [];
+                foreach ($grades as $grade) {
+                    $createdRecords[] = QuizRecord::create([
+                        'student_id' => $grade['student_id'],
+                        'section_subject_id' => $validated['section_subject_id'],
+                        'professor_id' => $professorId,
+                        'grading_period' => $validated['grading_period'],
+                        'quiz_number' => $validated['quiz_number'],
+                        'quiz_title' => $validated['quiz_title'] ?? null,
+                        'rating' => $grade['rating'],
+                    ]);
+                }
+                return $createdRecords;
+            });
+
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Failed to create records: ' . $e->getMessage()], 500);
             }
-            
-            return $createdRecords;
-        });
-        
-        $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
-            ->whereIn('id', array_map(fn($r) => $r->id, $records))
-            ->get();
-        
-        return response()->json([
-            'message' => 'Quiz records created successfully',
-            'data' => QuizRecordResource::collection($records),
-        ], 201);
+
+            $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
+                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->get();
+
+            return response()->json([
+                'message' => 'Quiz records created successfully',
+                'data' => QuizRecordResource::collection($records),
+            ], 201);
+        } else {
+            // Single record creation
+            $record = QuizRecord::create([
+                'student_id' => $validated['student_id'],
+                'section_subject_id' => $validated['section_subject_id'],
+                'professor_id' => $professorId,
+                'grading_period' => $validated['grading_period'],
+                'quiz_number' => $validated['quiz_number'],
+                'quiz_title' => $validated['quiz_title'] ?? null,
+                'rating' => $validated['rating'],
+            ]);
+
+            $record->load(['student.user', 'sectionSubject.subject']);
+
+            return response()->json([
+                'message' => 'Quiz record created successfully',
+                'data' => new QuizRecordResource($record),
+            ], 201);
+        }
     }
 
+    /**
+     * Get a single quiz record by ID.
+     * Professors can only see their own records; admins can see all.
+     */
     public function show(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
@@ -108,31 +157,77 @@ class QuizRecordController extends Controller
         return (new QuizRecordResource($quizRecord))->response();
     }
 
+    /**
+     * Update quiz record(s).
+     * Supports two formats:
+     * - Single: id field with rating/quiz_title
+     * - Bulk: grades array with quiz_record_id and rating for each
+     */
     public function update(UpdateQuizRecordRequest $request): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
         
-        $recordIds = array_column($validated['grades'], 'quiz_record_id');
-        $records = QuizRecord::whereIn('id', $recordIds)
-            ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
-            ->get()
-            ->keyBy('id');
-        
-        DB::transaction(function () use ($validated, $records) { 
-            foreach ($validated['grades'] as $gradeData) { 
-                if ($record = $records->get($gradeData['quiz_record_id'])) {
-                    $record->update([
-                        'rating' => $gradeData['rating'],
-                        'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title
-                    ]);
-                }
+        // Check if bulk format (grades array) or single record
+        if (isset($validated['grades']) && is_array($validated['grades'])) {
+            $recordIds = array_column($validated['grades'], 'quiz_record_id');
+            $records = QuizRecord::whereIn('id', $recordIds)
+                ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+                ->get()
+                ->keyBy('id');
+            
+            try { 
+                DB::transaction(function () use ($validated, $records) { 
+                foreach ($validated['grades'] as $gradeData) { 
+                    if ($record = $records->get($gradeData['quiz_record_id'])) {
+                        $record->update([
+                            'rating' => $gradeData['rating'],
+                            'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title
+                        ]);
+                    }
             }
-        });
-        
-        return response()->json(['message' => 'Records updated successfully']);
+            });
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Failed to create records: ' . $e->getMessage()], 500);
+            }
+
+            $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
+                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->get();
+            
+            return response()->json([
+                'message' => 'Records updated successfully',
+                'data' => QuizRecordResource::collection($records),
+                ], 201);
+
+        } else {
+            // Single record update
+            $record = QuizRecord::where('id', $validated['id'])
+                ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+                ->first();
+            
+            if (!$record) {
+                return response()->json(['message' => 'Quiz record not found'], 404);
+            }
+            
+            $record->update([
+                'rating' => $validated['rating'] ?? $record->rating,
+                'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title,
+            ]);
+            
+            $record->load(['student.user', 'sectionSubject.subject']);
+            
+            return response()->json([
+                'message' => 'Quiz record updated successfully',
+                'data' => new QuizRecordResource($record),
+            ]);
+        }
     }
 
+    /**
+     * Delete a quiz record by ID.
+     * Professors can only delete their own records; admins can delete all.
+     */
     public function destroy(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
