@@ -41,7 +41,7 @@ class ProjectRecordController extends Controller
             ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
             ->paginate(15);
         
-        return new ProjectRecord($projectRecords);
+        return new ProjectRecordCollection($projectRecords);
     }
 
     public function store(StoreProjectRecordRequest $request): JsonResponse
@@ -57,36 +57,62 @@ class ProjectRecordController extends Controller
             : $user->professor->professor_id;
         
         $validated = $request->validated();
-        $grades = $validated['grades'];
-        unset($validated['grades']);
         
-        $records = DB::transaction(function () use ($validated, $grades, $professorId) {
-            $createdRecords = [];
+        if (isset($validated['grades']) && is_array($validated['grades'])) {
+            $grades = $validated['grades'];
+            unset($validated['grades']);
             
-            foreach ($grades as $grade) {
-                $record = ProjectRecord::create([
-                    'student_id' => $grade['student_id'],
-                    'section_subject_id' => $validated['section_subject_id'],
-                    'professor_id' => $professorId,
-                    'grading_period' => $validated['grading_period'],
-                    'project_number' => $validated['project_number'],
-                    'project_title' => $validated['project_title'] ?? null,
-                    'rating' => $grade['rating'],
-                ]);
-                $createdRecords[] = $record;
+            try { 
+                $records = DB::transaction(function () use ($validated, $grades, $professorId) {
+                $createdRecords = [];
+                
+                foreach ($grades as $grade) {
+                    $record = ProjectRecord::create([
+                        'student_id' => $grade['student_id'],
+                        'section_subject_id' => $validated['section_subject_id'],
+                        'professor_id' => $professorId,
+                        'grading_period' => $validated['grading_period'],
+                        'project_number' => $validated['project_number'],
+                        'project_title' => $validated['project_title'] ?? null,
+                        'rating' => $grade['rating'],
+                    ]);
+                    $createdRecords[] = $record;
+                }
+                
+                return $createdRecords;
+                });
+            
+            } catch (\Exception $e) { 
+                return response()->json(['message' => 'Failed to create records: ' . $e->getMessage()], 500);
             }
             
-            return $createdRecords;
-        });
-        
-        $records = ProjectRecord::with(['student.user', 'sectionSubject.subject'])
-            ->whereIn('id', array_map(fn($r) => $r->id, $records))
-            ->get();
-        
-        return response()->json([
-            'message' => 'Project records created successfully',
-            'data' => ProjectRecord::collection($records),
-        ], 201);
+            $records = ProjectRecord::with(['student.user', 'sectionSubject.subject'])
+                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->get();
+            
+            return response()->json([
+                'message' => 'Project records created successfully',
+                'data' => ProjectRecordResource::collection($records),
+            ], 201);
+
+        } else {
+            $record = ProjectRecord::create([
+                'student_id' => $validated['student_id'],
+                'section_subject_id' => $validated['section_subject_id'],
+                'professor_id' => $professorId,
+                'grading_period' => $validated['grading_period'],
+                'project_number' => $validated['project_number'],
+                'project_title' => $validated['project_title'] ?? null,
+                'rating' => $validated['rating'],
+            ]);
+
+            $record->load(['student.user', 'sectionSubject.subject']);
+
+            return response()->json([
+                'message' => 'Project record created successfully',
+                'data' => new ProjectRecordResource($record),
+            ], 201);
+        }
     }
 
     public function show(int $id): JsonResponse
@@ -113,24 +139,58 @@ class ProjectRecordController extends Controller
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
         
-        $recordIds = array_column($validated['grades'], 'project_record_id');
-        $records = ProjectRecord::whereIn('id', $recordIds)
-            ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
-            ->get()
-            ->keyBy('id');
-        
-        DB::transaction(function () use ($validated, $records) { 
-            foreach ($validated['grades'] as $gradeData) { 
-                if ($record = $records->get($gradeData['project_record_id'])) {
-                    $record->update([
-                        'rating' => $gradeData['rating'],
-                        'project_title' => $validated['project_title'] ?? $record->project_title
-                    ]);
-                }
+        if (isset($validated['grades']) && is_array($validated['grades'])) {
+            $recordIds = array_column($validated['grades'], 'project_record_id');
+            $records = ProjectRecord::whereIn('id', $recordIds)
+                ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+                ->get()
+                ->keyBy('id');
+            
+            try { 
+                DB::transaction(function () use ($validated, $records) { 
+                foreach ($validated['grades'] as $gradeData) { 
+                    if ($record = $records->get($gradeData['project_record_id'])) {
+                        $record->update([
+                            'rating' => $gradeData['rating'],
+                            'project_title' => $validated['project_title'] ?? $record->project_title
+                            ]);
+                        }
+                    }
+                });
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Failed to create records' . $e->getMessage()], 500);
             }
-        });
+
+            $records = ProjectRecord::with(['student.user', 'sectionSubject.subject'])
+                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->get();
+
+            return response()->json([
+                'message' => 'Records updated successfully',
+                'data' => ProjectRecordResource::collection($records)
+            ]);
         
-        return response()->json(['message' => 'Records updated successfully']);
+        } else {
+            $record = ProjectRecord::where('id', $validated['id'])
+                ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+                ->first();
+            
+            if (!$record) {
+                return response()->json(['message' => 'Project record not found'], 404);
+            }
+            
+            $record->update([
+                'rating' => $validated['rating'] ?? $record->rating,
+                'project_title' => $validated['project_title'] ?? $record->project_title,
+            ]);
+            
+            $record->load(['student.user', 'sectionSubject.subject']);
+            
+            return response()->json([
+                'message' => 'Project record updated successfully',
+                'data' => new ProjectRecordResource($record),
+            ]);
+        }
     }
 
     public function destroy(int $id): JsonResponse
