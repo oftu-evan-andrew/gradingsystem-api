@@ -10,18 +10,33 @@ use App\Models\AttendanceRecord;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Routing\Controllers\HasMiddleware;
+
 
 class AttendanceRecordController extends Controller
 {
-    public function __construct() {
-        $this->middleware(function ($request, $next) {
-            if (!in_array($request->user()->role, ['professor', 'admin'])) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-            return $next($request);
-        });
+    /**
+     * Authorization middleware - Apply middleware to restrict access.
+     * Only professors and admins can access these endpoints.
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                if (!in_array($request->user()->role, ['professor', 'admin'])) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+                return $next($request);
+            }),
+        ];
     }
 
+    /**
+     * Get the professor ID based on the authenticated user.
+     * Returns null for admins (to allow access to all records).
+     * Returns the professor's ID for professors.
+     */
     private function getProfessorId(): ?string
     {
         $user = Auth::user();
@@ -33,6 +48,10 @@ class AttendanceRecordController extends Controller
         return $user->professor->professor_id ?? null;
     }
 
+    /**
+     * Get all attendance records with pagination.
+     * Professors see only their own records; admins see all.
+     */
     public function index(): AttendanceRecordCollection
     {
         $professorId = $this->getProfessorId();
@@ -44,6 +63,12 @@ class AttendanceRecordController extends Controller
         return new AttendanceRecordCollection($attendanceRecords);
     }
 
+    /**
+     * Store a new attendance record or multiple records (bulk).
+     * Supports two formats:
+     * - Single: student_id, attendance_date, status, rating (direct fields)
+     * - Bulk: grades array with multiple student records (each can have different status)
+     */
     public function store(StoreAttendanceRecordRequest $request): JsonResponse
     {
         $user = Auth::user();
@@ -113,6 +138,10 @@ class AttendanceRecordController extends Controller
         }
     }
 
+    /**
+     * Get a single attendance record by ID.
+     * Professors can only see their own records; admins can see all.
+     */
     public function show(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
@@ -132,11 +161,18 @@ class AttendanceRecordController extends Controller
         return (new AttendanceRecordResource($attendanceRecord))->response();
     }
 
+    /**
+     * Update attendance record(s).
+     * Supports two formats:
+     * - Single: id field with rating/status
+     * - Bulk: grades array with attendance_record_id, rating, and status for each
+     */
     public function update(UpdateAttendanceRecordRequest $request): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
         
+        // Check if bulk format (grades array) or single record
         if (isset($validated['grades']) && is_array($validated['grades'])) {
             $recordIds = array_column($validated['grades'], 'attendance_record_id');
             $records = AttendanceRecord::whereIn('id', $recordIds)
@@ -153,7 +189,7 @@ class AttendanceRecordController extends Controller
                             'status' => $gradeData['status'] ?? $record->status,
                         ]);
                     }
-                }
+            }
             });
             } catch (\Exception $e) {
                 return response()->json(['message' => 'Failed to create records: ' . $e->getMessage()], 500);
@@ -169,6 +205,7 @@ class AttendanceRecordController extends Controller
                 ]);
                 
         } else {
+            // Single record update
             $record = AttendanceRecord::where('id', $validated['id'])
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
@@ -191,6 +228,10 @@ class AttendanceRecordController extends Controller
         }
     }
 
+    /**
+     * Delete an attendance record by ID.
+     * Professors can only delete their own records; admins can delete all.
+     */
     public function destroy(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();

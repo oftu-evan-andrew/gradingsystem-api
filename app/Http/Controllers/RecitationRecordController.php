@@ -10,18 +10,34 @@ use App\Models\RecitationRecord;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Http\Controllers\Controller;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class RecitationRecordController extends Controller
+
+class RecitationRecordController extends Controller implements HasMiddleware
 {
-    public function __construct() {
-        $this->middleware(function ($request, $next) {
-            if (!in_array($request->user()->role, ['professor', 'admin'])) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-            return $next($request);
-        });
+    /**
+     * Authorization middleware - Apply middleware to restrict access.
+     * Only professors and admins can access these endpoints.
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                if (!in_array($request->user()->role, ['professor', 'admin'])) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+                return $next($request);
+            }),
+        ];
     }
 
+    /**
+     * Get the professor ID based on the authenticated user.
+     * Returns null for admins (to allow access to all records).
+     * Returns the professor's ID for professors.
+     */
     private function getProfessorId(): ?string
     {
         $user = Auth::user();
@@ -33,6 +49,10 @@ class RecitationRecordController extends Controller
         return $user->professor->professor_id ?? null;
     }
 
+    /**
+     * Get all recitation records with pagination.
+     * Professors see only their own records; admins see all.
+     */
     public function index(): RecitationRecordCollection
     {
         $professorId = $this->getProfessorId();
@@ -44,6 +64,12 @@ class RecitationRecordController extends Controller
         return new RecitationRecordCollection($recitationRecords);
     }
 
+    /**
+     * Store a new recitation record or multiple records (bulk).
+     * Supports two formats:
+     * - Single: student_id, rating (direct fields)
+     * - Bulk: grades array with multiple student records
+     */
     public function store(StoreRecitationRecordRequest $request): JsonResponse
     {
         $user = Auth::user();
@@ -109,6 +135,10 @@ class RecitationRecordController extends Controller
         }
     }
 
+    /**
+     * Get a single recitation record by ID.
+     * Professors can only see their own records; admins can see all.
+     */
     public function show(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
@@ -128,11 +158,18 @@ class RecitationRecordController extends Controller
         return (new RecitationRecordResource($recitationRecord))->response();
     }
 
+    /**
+     * Update recitation record(s).
+     * Supports two formats:
+     * - Single: id field with rating
+     * - Bulk: grades array with recitation_record_id and rating for each
+     */
     public function update(UpdateRecitationRecordRequest $request): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
         
+        // Check if bulk format (grades array) or single record
         if (isset($validated['grades']) && is_array($validated['grades'])) {
             $recordIds = array_column($validated['grades'], 'recitation_record_id');
             $records = RecitationRecord::whereIn('id', $recordIds)
@@ -148,7 +185,7 @@ class RecitationRecordController extends Controller
                             'rating' => $gradeData['rating']
                         ]);
                     }
-                }
+            }
             });
             } catch (\Exception $e) {
                 return response()->json(['message' => 'Failed to create records: ' . $e->getMessage()], 500);
@@ -164,6 +201,7 @@ class RecitationRecordController extends Controller
                 ], 201);
 
         } else {
+            // Single record update
             $record = RecitationRecord::where('id', $validated['id'])
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
@@ -185,6 +223,10 @@ class RecitationRecordController extends Controller
         }
     }
 
+    /**
+     * Delete a recitation record by ID.
+     * Professors can only delete their own records; admins can delete all.
+     */
     public function destroy(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();

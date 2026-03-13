@@ -8,20 +8,35 @@ use App\Http\Resources\ProjectRecordResource;
 use App\Http\Resources\ProjectRecordCollection;
 use App\Models\ProjectRecord;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Routing\Controllers\Middleware;
 
-class ProjectRecordController extends Controller
+
+class ProjectRecordController extends Controller implements HasMiddleware
 {
-    public function __construct() {
-        $this->middleware(function ($request, $next) {
-            if (!in_array($request->user()->role, ['professor', 'admin'])) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-            return $next($request);
-        });
+    /**
+     * Authorization middleware - Apply middleware to restrict access.
+     * Only professors and admins can access these endpoints.
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(function ($request, $next) {
+                if (!in_array($request->user()->role, ['professor', 'admin'])) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+                return $next($request);
+            }),
+        ];
     }
 
+    /**
+     * Get the professor ID based on the authenticated user.
+     * Returns null for admins (to allow access to all records).
+     * Returns the professor's ID for professors.
+     */
     private function getProfessorId(): ?string
     {
         $user = Auth::user();
@@ -33,6 +48,10 @@ class ProjectRecordController extends Controller
         return $user->professor->professor_id ?? null;
     }
 
+    /**
+     * Get all project records with pagination.
+     * Professors see only their own records; admins see all.
+     */
     public function index(): ProjectRecordCollection
     {
         $professorId = $this->getProfessorId();
@@ -44,6 +63,12 @@ class ProjectRecordController extends Controller
         return new ProjectRecordCollection($projectRecords);
     }
 
+    /**
+     * Store a new project record or multiple records (bulk).
+     * Supports two formats:
+     * - Single: student_id, project_number, project_title, rating (direct fields)
+     * - Bulk: grades array with multiple student records
+     */
     public function store(StoreProjectRecordRequest $request): JsonResponse
     {
         $user = Auth::user();
@@ -52,12 +77,14 @@ class ProjectRecordController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         
+        // For admins, use provided professor_id; for professors, use their own ID
         $professorId = $user->role === 'admin' 
             ? $request->input('professor_id') 
             : $user->professor->professor_id;
         
         $validated = $request->validated();
         
+        // Check if bulk format (grades array) or single record
         if (isset($validated['grades']) && is_array($validated['grades'])) {
             $grades = $validated['grades'];
             unset($validated['grades']);
@@ -96,6 +123,7 @@ class ProjectRecordController extends Controller
             ], 201);
 
         } else {
+            // Single record creation
             $record = ProjectRecord::create([
                 'student_id' => $validated['student_id'],
                 'section_subject_id' => $validated['section_subject_id'],
@@ -115,6 +143,10 @@ class ProjectRecordController extends Controller
         }
     }
 
+    /**
+     * Get a single project record by ID.
+     * Professors can only see their own records; admins can see all.
+     */
     public function show(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
@@ -134,11 +166,18 @@ class ProjectRecordController extends Controller
         return (new ProjectRecordResource($projectRecord))->response();
     }
 
+    /**
+     * Update project record(s).
+     * Supports two formats:
+     * - Single: id field with rating/project_title
+     * - Bulk: grades array with project_record_id and rating for each
+     */
     public function update(UpdateProjectRecordRequest $request): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
         
+        // Check if bulk format (grades array) or single record
         if (isset($validated['grades']) && is_array($validated['grades'])) {
             $recordIds = array_column($validated['grades'], 'project_record_id');
             $records = ProjectRecord::whereIn('id', $recordIds)
@@ -171,6 +210,7 @@ class ProjectRecordController extends Controller
             ]);
         
         } else {
+            // Single record update
             $record = ProjectRecord::where('id', $validated['id'])
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
@@ -193,6 +233,10 @@ class ProjectRecordController extends Controller
         }
     }
 
+    /**
+     * Delete a project record by ID.
+     * Professors can only delete their own records; admins can delete all.
+     */
     public function destroy(int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
