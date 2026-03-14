@@ -14,7 +14,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Routing\Controllers\HasMiddleware;
 
 
-class AttendanceRecordController extends Controller
+class AttendanceRecordController extends Controller implements HasMiddleware
 {
     /**
      * Authorization middleware - Apply middleware to restrict access.
