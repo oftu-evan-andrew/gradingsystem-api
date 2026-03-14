@@ -1,0 +1,33 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UpdateClassStandingRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'type' => 'required|in:class_standing',
+            'id' => 'required_without:grades|sometimes|required|exists:class_standings,id',
+            'attendance_score' => 'nullable|numeric|between:0,100',
+            'recitation_score' => 'nullable|numeric|between:0,100',
+            'quiz_score' => 'nullable|numeric|between:0,100',
+            'project_score' => 'nullable|numeric|between:0,100',
+            'major_exam_score' => 'nullable|numeric|between:0,100',
+            'grades' => 'sometimes|required|array|min:1',
+            'grades.*.class_standing_id' => 'required_with:grades|exists:class_standings,id',
+            'grades.*.attendance_score' => 'nullable|numeric|between:0,100',
+            'grades.*.recitation_score' => 'nullable|numeric|between:0,100',
+            'grades.*.quiz_score' => 'nullable|numeric|between:0,100',
+            'grades.*.project_score' => 'nullable|numeric|between:0,100',
+            'grades.*.major_exam_score' => 'nullable|numeric|between:0,100',
+        ];
+    }
+}
