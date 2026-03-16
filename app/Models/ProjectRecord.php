@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\GradeCalculationService;
 use Illuminate\Database\Eloquent\Model;
 
 class ProjectRecord extends Model
@@ -15,6 +16,27 @@ class ProjectRecord extends Model
         'project_title',
         'rating'
     ];
+
+    protected static function booted() {
+        static::saved(function ($record) {
+            $gradeService = app(GradeCalculationService::class);
+
+            $averages = $gradeService->calculateComponentAverages(
+                $record->student_id,
+                $record->section_subject_id,
+                $record->grading_period
+            );
+
+            $classStanding = ClassStanding::firstOrNew([
+                'student_id' => $record->student_id,
+                'section_subject_id' => $record->section_subject_id, 
+                'grading_period' => $record->grading_period,
+            ]);
+
+            $classStanding->project_score = $averages['project'];
+            $classStanding->save();
+        });
+    }
 
     public function student()
     {

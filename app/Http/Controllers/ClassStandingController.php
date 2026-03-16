@@ -41,6 +41,24 @@ class ClassStandingController extends Controller implements HasMiddleware
         return $user->professor->professor_id ?? null;
     }
 
+    public function finalize(Request $request, int $id): JsonResponse {
+        $classStanding = ClassStanding::find($id);
+
+        if (!$classStanding) {
+            return response()->json(['mesasge' => 'Not found'], 404);
+        }
+
+        $this->authorize('finalize', $classStanding);
+
+        $classStanding->status = 'finalized';
+        $classStanding->save();
+
+        return response()->json([
+            'message' => 'Grade finalized successfully',
+            'data' => new ClassStandingResource($classStanding)
+        ]);
+    }
+
     // Get all class standing records with pagination.
     public function index()
     {
@@ -113,6 +131,8 @@ class ClassStandingController extends Controller implements HasMiddleware
             return response()->json(['message' => 'Class standing not found'], 404);
         }
 
+        $this->authorize('view', $classStanding);
+
         return (new ClassStandingResource($classStanding))->response();
     }
 
@@ -162,6 +182,8 @@ class ClassStandingController extends Controller implements HasMiddleware
                 return response()->json(['message' => 'Class standing not found'], 404);
             }
 
+            $this->authorize('finalize', $record);
+
             $record->update([
                 'attendance_score' => $validated['attendance_score'] ?? $record->attendance_score,
                 'recitation_score' => $validated['recitation_score'] ?? $record->recitation_score, 
@@ -188,6 +210,8 @@ class ClassStandingController extends Controller implements HasMiddleware
         if (!$classStanding) {
             return response()->json(['message' => 'Class standing not found'], 404);
         }
+
+        $this->authorize('finalize', $classStanding);
 
         $classStanding->delete();
 

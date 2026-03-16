@@ -25,6 +25,8 @@ Route::get('/user', function (Request $request) {
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 
+
+
 Route::middleware('auth:sanctum')->group(function () {
     // Authentication
     Route::post('/auth/register', [AuthController::class, 'register']);
@@ -37,6 +39,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('students', StudentController::class);
     Route::apiResource('section-subjects', SectionSubjectController::class);
     
+    // Finalize student performance
+    Route::post('class-standings/{id}/finalize', [ClassStandingController::class, 'finalize']);
+    Route::post('periodic-grades/{id}/finalize', [PeriodicGradeController::class, 'finalize']);
+    Route::post('student-final-grades/{id}/finalize', [StudentFinalGradeController::class, 'finalize']);
+
     // Grading Records
     Route::middleware(['can:access-professor-content'])->group(function () {
         Route::apiResource('attendance-records', AttendanceRecordController::class);

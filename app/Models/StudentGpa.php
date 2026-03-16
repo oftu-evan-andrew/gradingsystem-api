@@ -12,7 +12,6 @@ class StudentGpa extends Model
         'student_id',
         'school_year',
         'semester',
-        'semester_gpa',
         'cumulative_gpa'
     ];
 
