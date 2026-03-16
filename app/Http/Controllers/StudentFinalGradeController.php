@@ -86,11 +86,18 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
         }
     }
 
-    public function show(StudentFinalGrade $studentFinalGrade)
+    public function show($id)
     {
-        $this->authorize('view', $studentFinalGrade);
-        $studentFinalGrade->load(['student.user', 'sectionSubject.subject']);
-        return new StudentFinalGradeResource($studentFinalGrade);
+        $studentFinalGradde = StudentFinalGrade::with(['student.user', 'sectionSubject.subject'])
+            ->find($id);  
+        
+        if (!$studentFinalGradde) { 
+            return response()->json(['message' => 'Class standing not found'], 404);
+        }
+
+        $this->authorize('view', $studentFinalGradde);
+
+        return (new StudentFinalGradeResource($studentFinalGradde))->response();
     }
 
     // Update final grade(s) - single or bulk
@@ -156,7 +163,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
         }
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy($id): JsonResponse
     {
         $finalGrade = StudentFinalGrade::find($id);
 

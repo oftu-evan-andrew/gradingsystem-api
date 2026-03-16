@@ -88,7 +88,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
     }
 
     // Get a single periodic grade by ID
-    public function show(int $id): JsonResponse
+    public function show($id): JsonResponse
     {
         $periodicGrade = PeriodicGrade::with(['student.user', 'classStanding'])
             ->find($id);
@@ -165,7 +165,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
     }
 
     // Delete a periodic grade by ID
-    public function destroy(int $id): JsonResponse
+    public function destroy($id): JsonResponse
     {
         $periodicGrade = PeriodicGrade::find($id);
 
@@ -180,7 +180,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         return response()->json(null, 204);
     }
 
-    public function finalize(int $id): JsonResponse {
+    public function finalize($id): JsonResponse {
         $periodicGrade = PeriodicGrade::find($id);
 
         if (!$periodicGrade) {

@@ -106,7 +106,7 @@ class ClassStandingController extends Controller implements HasMiddleware
 
     // Get a signle class standing record by ID
     // Professors can only see their own records; admins can see all. 
-    public function show(int $id): JsonResponse
+    public function show($id): JsonResponse
     {
         $classStanding = ClassStanding::with(['student.user', 'sectionSubject.subject'])
             ->find($id);   
@@ -189,7 +189,7 @@ class ClassStandingController extends Controller implements HasMiddleware
     
     // Delete a class standing record by ID
     // Professors can only delete their own records; admin can delete all.
-    public function destroy(int $id): JsonResponse
+    public function destroy($id): JsonResponse
     {
         $classStanding = ClassStanding::find($id);
 
@@ -204,7 +204,7 @@ class ClassStandingController extends Controller implements HasMiddleware
         return response()->json(null, 204);
     }
     
-    public function finalize(Request $request, int $id): JsonResponse {
+    public function finalize(Request $request, $id): JsonResponse {
         $classStanding = ClassStanding::find($id);
 
         if (!$classStanding) {
