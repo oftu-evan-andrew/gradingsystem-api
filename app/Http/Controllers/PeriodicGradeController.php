@@ -27,6 +27,24 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         ];
     }
 
+    public function finalize(Request $request, int $id): JsonResponse {
+        $periodicGrade = PeriodicGrade::find($id);
+
+        if (!$periodicGrade) {
+            return response()->json(['mesasge' => 'Not found'], 404);
+        }
+
+        $this->authorize('finalize', $periodicGrade);
+
+        $periodicGrade->status = 'finalized';
+        $periodicGrade->save();
+
+        return response()->json([
+            'message' => 'Grade finalized successfully',
+            'data' => new PeriodicGradeResource($periodicGrade)
+        ]);
+    }
+
     // Get all periodic grades with pagination
     public function index()
     {
@@ -52,6 +70,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
                 $records = DB::transaction(function () use ($validated, $grades) {
                     $createdRecords = [];
                     foreach ($grades as $grade) { 
+
                         $createdRecords[] = PeriodicGrade::create([
                             'student_id' => $grade['student_id'],
                             'class_standing_id' => $validated['class_standing_id'],
@@ -59,6 +78,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
                             'periodic_grade' => $grade['periodic_grade'] ?? null,
                             'status' => $grade['status']
                         ]);
+
                     }
                     return $createdRecords;
                 });
@@ -94,6 +114,8 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         if (!$periodicGrade) {
             return response()->json(['message' => 'Periodic grade not found'], 404);
         }
+
+        $this->authorize('view', $periodicGrade);
 
         return (new PeriodicGradeResource($periodicGrade))->response();
     }
@@ -141,6 +163,8 @@ class PeriodicGradeController extends Controller implements HasMiddleware
                 return response()->json(['message' => 'Periodic grade not found'], 404);
             }
 
+            $this->authorize('finalize', $record);
+
             $record->update([
                 'periodic_grade' => $validated['periodic_grade'] ?? $record->periodic_grade, 
                 'status' => $validated['status'] ?? $record->status,
@@ -165,6 +189,8 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         if (!$periodicGrade) {
             return response()->json(['message' => 'Periodic grade not found'], 404);
         }
+
+        $this->authorize('finalize', $periodicGrade);
 
         $periodicGrade->delete();
 
