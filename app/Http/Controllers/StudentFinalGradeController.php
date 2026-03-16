@@ -52,6 +52,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
             try {
                 $records = DB::transaction(function () use ($validated, $grades) {
                     $createdRecords = [];
+
                     foreach ($grades as $grade) {
                         $createdRecords[] = StudentFinalGrade::create([
                             'student_id' => $grade['student_id'],
@@ -108,6 +109,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
                 DB::transaction(function () use ($validated, $records) {
                     foreach ($validated['grades'] as $gradeData) {
                         if ($record = $records->get($gradeData['student_final_grade_id'])) {
+                            $this->authorize('finalize', $record);
                             $record->update([
                                 'final_grade' => $gradeData['final_grade'] ?? $record->final_grade,
                                 'status' => $gradeData['status'] ?? $record->status,
