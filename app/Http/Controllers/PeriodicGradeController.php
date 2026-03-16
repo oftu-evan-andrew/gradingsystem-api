@@ -27,24 +27,6 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         ];
     }
 
-    public function finalize(Request $request, int $id): JsonResponse {
-        $periodicGrade = PeriodicGrade::find($id);
-
-        if (!$periodicGrade) {
-            return response()->json(['mesasge' => 'Not found'], 404);
-        }
-
-        $this->authorize('finalize', $periodicGrade);
-
-        $periodicGrade->status = 'finalized';
-        $periodicGrade->save();
-
-        return response()->json([
-            'message' => 'Grade finalized successfully',
-            'data' => new PeriodicGradeResource($periodicGrade)
-        ]);
-    }
-
     // Get all periodic grades with pagination
     public function index()
     {
@@ -137,6 +119,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
                 DB::transaction(function () use ($validated, $records) {
                     foreach ($validated['grades'] as $gradeData) {
                         if ($record = $records->get($gradeData['periodic_grade_id'])) {
+                            $this->authorize('finalize', $record);
                             $record->update([
                                 'periodic_grade' => $gradeData['periodic_grade'] ?? $record->periodic_grade, 
                                 'status' => $gradeData['status'] ?? $record->status,
@@ -195,5 +178,23 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         $periodicGrade->delete();
 
         return response()->json(null, 204);
+    }
+
+    public function finalize(int $id): JsonResponse {
+        $periodicGrade = PeriodicGrade::find($id);
+
+        if (!$periodicGrade) {
+            return response()->json(['mesasge' => 'Not found'], 404);
+        }
+
+        $this->authorize('finalize', $periodicGrade);
+
+        $periodicGrade->status = 'finalized';
+        $periodicGrade->save();
+
+        return response()->json([
+            'message' => 'Grade finalized successfully',
+            'data' => new PeriodicGradeResource($periodicGrade)
+        ]);
     }
 }

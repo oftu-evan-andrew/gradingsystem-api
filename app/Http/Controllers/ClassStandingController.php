@@ -41,23 +41,7 @@ class ClassStandingController extends Controller implements HasMiddleware
         return $user->professor->professor_id ?? null;
     }
 
-    public function finalize(Request $request, int $id): JsonResponse {
-        $classStanding = ClassStanding::find($id);
-
-        if (!$classStanding) {
-            return response()->json(['mesasge' => 'Not found'], 404);
-        }
-
-        $this->authorize('finalize', $classStanding);
-
-        $classStanding->status = 'finalized';
-        $classStanding->save();
-
-        return response()->json([
-            'message' => 'Grade finalized successfully',
-            'data' => new ClassStandingResource($classStanding)
-        ]);
-    }
+    
 
     // Get all class standing records with pagination.
     public function index()
@@ -152,7 +136,9 @@ class ClassStandingController extends Controller implements HasMiddleware
             try {
                 DB::transaction(function() use ($validated, $records) {
                     foreach ($validated['grades'] as $gradeData) {
+                        
                         if ($record = $records->get($gradeData['class_standing_id'])) {
+                            $this->authorize('finalize', $record);
                             $record->update([
                                 'attendance_score' => $gradeData['attendance_score'] ?? $record->attendance_score,
                                 'recitation_score' => $gradeData['recitation_score'] ?? $record->recitation_score,
@@ -217,4 +203,23 @@ class ClassStandingController extends Controller implements HasMiddleware
 
         return response()->json(null, 204);
     }
+    
+    public function finalize(Request $request, int $id): JsonResponse {
+        $classStanding = ClassStanding::find($id);
+
+        if (!$classStanding) {
+            return response()->json(['mesasge' => 'Not found'], 404);
+        }
+
+        $this->authorize('finalize', $classStanding);
+
+        $classStanding->status = 'finalized';
+        $classStanding->save();
+
+        return response()->json([
+            'message' => 'Grade finalized successfully',
+            'data' => new ClassStandingResource($classStanding)
+        ]);
+    }
+    
 }
