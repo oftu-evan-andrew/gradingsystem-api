@@ -41,24 +41,22 @@ class PeriodicGrade extends Model
     }
 
     protected static function booted() {
-        static::updated(function ($periodicGrade) {
-            if ($periodicGrade->wasChanged('status')) {
-                $classStanding = $periodicGrade->classStanding;
-                $sectionSubject = $classStanding->sectionSubject; 
-                $student = $periodicGrade->student;
+        static::saved(function ($periodicGrade) {
+            // Recalculate StudentFinalGrade when periodic grade changes
+            $classStanding = $periodicGrade->classStanding;
+            $sectionSubject = $classStanding->sectionSubject; 
+            $student = $periodicGrade->student;
 
-                // Calculate FinalGrade (average of all periodic grade for this section_subject)
-                $finalGradeValue = app(GradeCalculationService::class) 
-                    ->calculateFinalGrade($student, $sectionSubject);
+            $finalGradeValue = app(GradeCalculationService::class) 
+                ->calculateFinalGrade($student, $sectionSubject);
 
-                // Find or create StudentFinalGrade
+            if ($finalGradeValue !== null) {
                 $finalGrade = StudentFinalGrade::firstOrNew([
                     'student_id' => $student->id,
                     'section_subject_id' => $sectionSubject->id
                 ]);
 
                 $finalGrade->final_grade = $finalGradeValue;
-                $finalGrade->status = $periodicGrade->status; 
                 $finalGrade->save();
             }
         });

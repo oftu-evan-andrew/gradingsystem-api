@@ -95,7 +95,7 @@ class QuizRecordController extends Controller implements HasMiddleware
                         'grading_period' => $validated['grading_period'],
                         'quiz_number' => $validated['quiz_number'],
                         'quiz_title' => $validated['quiz_title'] ?? null,
-                        'rating' => $grade['rating'],
+                        'rating' => $this->calculateRating($grade['pts'] ?? null, $grade['items'] ?? null),
                     ]);
                 }
                 return $createdRecords;
@@ -122,7 +122,7 @@ class QuizRecordController extends Controller implements HasMiddleware
                 'grading_period' => $validated['grading_period'],
                 'quiz_number' => $validated['quiz_number'],
                 'quiz_title' => $validated['quiz_title'] ?? null,
-                'rating' => $validated['rating'],
+                'rating' => $this->calculateRating($validated['pts'] ?? null, $validated['items'] ?? null),
             ]);
 
             $record->load(['student.user', 'sectionSubject.subject']);
@@ -181,7 +181,7 @@ class QuizRecordController extends Controller implements HasMiddleware
                 foreach ($validated['grades'] as $gradeData) { 
                     if ($record = $records->get($gradeData['quiz_record_id'])) {
                         $record->update([
-                            'rating' => $gradeData['rating'],
+                            'rating' => $this->calculateRating($gradeData['pts'] ?? null, $gradeData['items'] ?? null),
                             'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title
                         ]);
                     }
@@ -211,7 +211,7 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
             
             $record->update([
-                'rating' => $validated['rating'] ?? $record->rating,
+                'rating' => $this->calculateRating($validated['pts'] ?? null, $validated['items'] ?? null),
                 'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title,
             ]);
             
@@ -247,5 +247,12 @@ class QuizRecordController extends Controller implements HasMiddleware
         $quizRecord->delete();
         
         return response()->json(null, 204);
+    }
+
+    private function calculateRating(?float $pts, ?float $items): ?float {
+        if ($pts === null || $items === null || $items === 0) {
+            return null;
+        }
+        return round(($pts / $items) * 50 + 50, 2);
     }
 }

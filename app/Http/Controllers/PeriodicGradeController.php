@@ -7,6 +7,7 @@ use App\Http\Requests\UpdatePeriodicGradeRequest;
 use App\Http\Resources\PeriodicGradeCollection;
 use App\Http\Resources\PeriodicGradeResource;
 use App\Models\PeriodicGrade;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -27,12 +28,28 @@ class PeriodicGradeController extends Controller implements HasMiddleware
         ];
     }
 
+    private function getProfessorId(): ?string
+    {
+        $user = Auth::user();
+        
+        if ($user->role === 'admin') {
+            return null;
+        }
+        
+        return $user->professor->professor_id ?? null;
+    }
+
     // Get all periodic grades with pagination
     public function index()
     {
-        $periodicGrades = PeriodicGrade::with(['student.user', 'classStanding']) 
-            ->paginate(15); 
-
+        $professorId = $this->getProfessorId();
+        
+        $periodicGrades = PeriodicGrade::with(['student.user', 'classStanding'])
+            ->when($professorId, fn($q) => $q->whereHas('classStanding.sectionSubject', fn($sq) => 
+                $sq->where('professor_id', $professorId)
+            ))
+            ->paginate(15);
+        
         return new PeriodicGradeCollection($periodicGrades);
     }
 

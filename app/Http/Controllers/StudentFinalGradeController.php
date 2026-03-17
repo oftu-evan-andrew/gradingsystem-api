@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\StudentFinalGrade;
+use App\Models\StudentGpa;
+use App\Services\GradeCalculationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Http\Requests\StoreStudentFinalGradeRequest;
 use App\Http\Requests\UpdateStudentFinalGradeRequest;
@@ -29,11 +32,29 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
         ];
     }
 
-    public function index()
+    private function getProfessorId(): ?string
     {
-        $finalGrades = StudentFinalGrade::with(['student.user', 'sectionSubject.subject'])
-            ->paginate(15);
+        $user = Auth::user();
+        
+        if ($user->role === 'admin') {
+            return null;
+        }
+        
+        return $user->professor->professor_id ?? null;
+    }
 
+    // Verifies professor Id, then fetches list of final grades that are
+    // has the matching professor Id
+    public function index()
+    {   
+        $professorId = $this->getProfessorId();
+
+        $finalGrades = StudentFinalGrade::with(['student.user', 'sectionSubject.subject'])
+            ->when($professorId, fn($q) => $q->whereHas('sectionSubject', fn($sq) => 
+                $sq->where('professor_id', $professorId)
+            ))
+            ->paginate(15);
+        
         return new StudentFinalGradeCollection($finalGrades);
     }
 
@@ -111,18 +132,26 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
         if (isset($validated['grades']) && is_array($validated['grades'])) {
             $recordIds = array_column($validated['grades'], 'student_final_grade_id');
             $records = StudentFinalGrade::whereIn('id', $recordIds)->get()->keyBy('id');
+            $studentsToRecalculate = [];
 
             try {
-                DB::transaction(function () use ($validated, $records) {
+                DB::transaction(function () use ($validated, $records, &$studentsToRecalculate) {
                     foreach ($validated['grades'] as $gradeData) {
                         if ($record = $records->get($gradeData['student_final_grade_id'])) {
                             $this->authorize('finalize', $record);
+                            $previousStatus = $record->status;
+                            $newStatus = $gradeData['status'] ?? $record->status;
+
                             $record->update([
                                 'final_grade' => $gradeData['final_grade'] ?? $record->final_grade,
-                                'status' => $gradeData['status'] ?? $record->status,
+                                'status' => $newStatus,
                                 'submitted_at' => $gradeData['submitted_at'] ?? $record->submitted_at,
                                 'last_modified_by' => $gradeData['last_modified_by'] ?? $record->last_modified_by,
                             ]);
+
+                            if ($previousStatus !== 'finalized' && $newStatus === 'finalized') {
+                                $studentsToRecalculate[$record->id] = $record;
+                            }
                         }
                     }
                 });
@@ -147,9 +176,12 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
 
             $this->authorize('finalize', $record);
 
+            $previousStatus = $record->status;
+            $newStatus = $validated['status'] ?? $record->status;
+
             $record->update([
                 'final_grade' => $validated['final_grade'] ?? $record->final_grade,
-                'status' => $validated['status'] ?? $record->status,
+                'status' => $newStatus,
                 'submitted_at' => $validated['submitted_at'] ?? $record->submitted_at,
                 'last_modified_by' => $validated['last_modified_by'] ?? $record->last_modified_by,
             ]);

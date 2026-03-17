@@ -57,5 +57,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('class-standings', ClassStandingController::class);
     Route::apiResource('periodic-grades', PeriodicGradeController::class);
     Route::apiResource('student-final-grades', StudentFinalGradeController::class);
-    Route::apiResource('student-gpas', StudentGpaController::class);
+    
+    Route::get('student-gpas', [StudentGpaController::class, 'index']);
+    Route::get('student-gpas/{studentGpa}', [StudentGpaController::class, 'show']);
+    Route::delete('student-gpas/{studentGpa}', [StudentGpaController::class, 'destroy']);
+    Route::post('student-gpas/calculate', [StudentGpaController::class, 'calculate']);
 });

@@ -17,10 +17,12 @@ class UpdateQuizRecordRequest extends FormRequest
             'type' => 'required|in:quiz',
             'id' => 'required_without:grades|sometimes|required|exists:quiz_records,id',
             'quiz_title' => 'nullable|string|max:150',
-            'rating' => 'required_without:grades|sometimes|numeric|between:0,100',
+            'pts' => 'nullable|numeric|min:0',
+            'items' => 'nullable|numeric|min:1',
             'grades' => 'sometimes|required|array|min:1',
             'grades.*.quiz_record_id' => 'required_with:grades|exists:quiz_records,id',
-            'grades.*.rating' => 'required_with:grades|numeric|between:0,100',
+            'grades.*.pts' => 'nullable|numeric|min:0',
+            'grades.*.items' => 'nullable|numeric|min:1'
         ];
     }
 }

@@ -20,14 +20,16 @@ class UpdateClassStandingRequest extends FormRequest
             'recitation_score' => 'nullable|numeric|between:0,100',
             'quiz_score' => 'nullable|numeric|between:0,100',
             'project_score' => 'nullable|numeric|between:0,100',
-            'major_exam_score' => 'nullable|numeric|between:0,100',
+            'major_exam_pts' => 'nullable|numeric|min:0',
+            'major_exam_items' => 'nullable|numeric|min:1',
             'grades' => 'sometimes|required|array|min:1',
             'grades.*.class_standing_id' => 'required_with:grades|exists:class_standings,id',
             'grades.*.attendance_score' => 'nullable|numeric|between:0,100',
             'grades.*.recitation_score' => 'nullable|numeric|between:0,100',
             'grades.*.quiz_score' => 'nullable|numeric|between:0,100',
             'grades.*.project_score' => 'nullable|numeric|between:0,100',
-            'grades.*.major_exam_score' => 'nullable|numeric|between:0,100',
+            'grades.*.major_exam_pts' => 'nullable|numeric|min:0',
+            'grades.*.major_exam_items' => 'nullable|numeric|min:1',
         ];
     }
 }

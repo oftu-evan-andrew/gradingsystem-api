@@ -62,13 +62,16 @@ class GradeCalculationService {
         return round($weightedSum, 2);
     }
 
-    public function calculatePeriodicGrade(ClassStanding $classStanding): float { 
+    public function calculatePeriodicGrade(ClassStanding $classStanding): ?float { 
+        if ($classStanding->major_exam_score === null) {
+            return null;
+        }
+        
         $weightedSum = $this->calculateClassStanding($classStanding);
-        $majorExam = $classStanding->major_exam_score ?? 0;
-
+        $majorExam = $classStanding->major_exam_score;
         $periodicGrade = (($weightedSum * 2 ) + $majorExam) / 3;
 
-        return round($periodicGrade, 2);
+        return $this->percentageToGrade($periodicGrade);
     }
 
     public function calculateFinalGrade(Student $student, SectionSubject $sectionSubject): ?float { 

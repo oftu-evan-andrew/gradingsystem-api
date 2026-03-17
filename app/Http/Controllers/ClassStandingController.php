@@ -46,9 +46,14 @@ class ClassStandingController extends Controller implements HasMiddleware
     // Get all class standing records with pagination.
     public function index()
     {
+        $professorId = $this->getProfessorId();
+
         $classStandings = ClassStanding::with(['student.user', 'sectionSubject.subject'])
+            ->when($professorId, fn($q) => $q->whereHas('sectionSubject', fn($sq) => 
+                $sq->where('professor_id', $professorId)
+            ))
             ->paginate(15);
-        
+
         return new ClassStandingCollection($classStandings);
     }
 
@@ -76,7 +81,7 @@ class ClassStandingController extends Controller implements HasMiddleware
                         'recitation_score' => $grade['recitation_score'] ?? null,
                         'quiz_score' => $grade['quiz_score'] ?? null,
                         'project_score' => $grade['project_score'] ?? null,
-                        'major_exam_score' => $grade['major_exam_score'] ?? null,
+                        'major_exam_score' => $this->calculateRating($grade['major_exam_pts'] ?? null, $grade['major_exam_items'] ?? null),
                     ]);
                 }
                 return $createdRecords;
@@ -94,7 +99,16 @@ class ClassStandingController extends Controller implements HasMiddleware
                 'data' => ClassStandingResource::collection($records),
             ], 201);
         } else { 
-            $record = ClassStanding::create($validated);
+            $record = ClassStanding::create([
+                'student_id' => $validated['student_id'],
+                'section_subject_id' => $validated['section_subject_id'],
+                'grading_period' => $validated['grading_period'],
+                'attendance_score' => $validated['attendance_score'] ?? null,
+                'recitation_score' => $validated['recitation_score'] ?? null,
+                'quiz_score' => $validated['quiz_score'] ?? null,
+                'project_score' => $validated['project_score'] ?? null,
+                'major_exam_score' => $this->calculateRating($validated['major_exam_pts'] ?? null, $validated['major_exam_items'] ?? null),
+            ]);
             $record->load(['student.user', 'sectionSubject.subject']);
 
             return response()->json([
@@ -144,7 +158,9 @@ class ClassStandingController extends Controller implements HasMiddleware
                                 'recitation_score' => $gradeData['recitation_score'] ?? $record->recitation_score,
                                 'quiz_score' => $gradeData['quiz_score'] ?? $record->quiz_score,
                                 'project_score' => $gradeData['project_score'] ?? $record->project_score,
-                                'major_exam_score' => $gradeData['major_exam_score'] ?? $record->major_exam_score,
+                                'major_exam_score' => isset($gradeData['major_exam_pts']) 
+                                    ? $this->calculateRating($gradeData['major_exam_pts'], $gradeData['major_exam_items']) 
+                                    : $record->major_exam_score,
                             ]);
                         }
                     }
@@ -175,7 +191,9 @@ class ClassStandingController extends Controller implements HasMiddleware
                 'recitation_score' => $validated['recitation_score'] ?? $record->recitation_score, 
                 'quiz_score' => $validated['quiz_score'] ?? $record->quiz_score,
                 'project_score' => $validated['project_score'] ?? $record->project_score,
-                'major_exam_score' => $validated['major_exam_score'] ?? $record->major_exam_score, 
+                'major_exam_score' => isset($validated['major_exam_pts']) 
+                    ? $this->calculateRating($validated['major_exam_pts'], $validated['major_exam_items']) 
+                    : $record->major_exam_score, 
             ]);
 
             $record->load(['student.user', 'sectionSubject.subject']);
@@ -220,6 +238,14 @@ class ClassStandingController extends Controller implements HasMiddleware
             'message' => 'Grade finalized successfully',
             'data' => new ClassStandingResource($classStanding)
         ]);
+    }
+    
+    private function calculateRating(?float $pts, ?float $items): ?float
+    {
+        if ($pts === null || $items === null || $items === 0) {
+            return null;
+        }
+        return round(($pts / $items) * 50 + 50, 2);
     }
     
 }

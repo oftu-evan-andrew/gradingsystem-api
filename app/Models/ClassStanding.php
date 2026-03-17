@@ -51,16 +51,5 @@ class ClassStanding extends Model
                 ->calculatePeriodicGrade($classStanding);
             $periodicGrade->save();
         });
-
-        static::updated(function ($classStanding) {
-            // Recalculate if status was changed to submitted/finalized
-            if ($classStanding->wasChanged('status')) {
-                $periodicGrade = PeriodicGrade::where('class_standing_id', $classStanding->id)->first();
-                if ($periodicGrade) {
-                    $periodicGrade->status = $classStanding->status;
-                    $periodicGrade->save();
-                }
-            }
-        });
     }
 }

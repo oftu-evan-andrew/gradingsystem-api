@@ -32,14 +32,17 @@ class StoreClassStandingRequest extends FormRequest
             'recitation_score' => 'required_without:grades|sometimes|required|numeric|between:0,100',
             'quiz_score' => 'required_without:grades|sometimes|required|numeric|between:0,100',
             'project_score' => 'required_without:grades|sometimes|required|numeric|between:0,100',
-            'major_exam_score' => 'required_without:grades|sometimes|required|numeric|between:0,100',
+            'major_exam_pts' => 'nullable|numeric|min:0',
+            'major_exam_items' => 'nullable|numeric|min:1',
             'grades' => 'sometimes|required|array|min:1',
             'grades.*.student_id' => 'required_with:grades|uuid|exists:students,student_id',
             'grades.*.attendance_score' => 'required_with:grades|numeric|between:0,100',
             'grades.*.recitation_score' => 'required_with:grades|numeric|between:0,100',
             'grades.*.quiz_score' => 'required_with:grades|numeric|between:0,100',
             'grades.*.project_score' => 'required_with:grades|numeric|between:0,100',
-            'grades.*.major_exam_score' => 'required_with:grades|numeric|between:0,100',
+            'grades.*.major_exam_pts' => 'nullable|numeric|min:0',
+            'grades.*.major_exam_items' => 'nullable|numeric|min:1'
+            
         ];
     }
 }
