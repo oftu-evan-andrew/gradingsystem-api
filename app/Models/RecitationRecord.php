@@ -30,7 +30,7 @@ class RecitationRecord extends Model
                 'student_id' => $record->student_id,
                 'section_subject_id' => $record->section_subject_id, 
                 'grading_period' => $record->grading_period,
-            ]);
+            ]); 
 
             $classStanding->recitation_score = $averages['recitation'];
             $classStanding->save();

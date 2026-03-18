@@ -50,10 +50,24 @@ class AttendanceRecordController extends Controller implements HasMiddleware
 
     /**
      * Get all attendance records with pagination.
+     * Students see only their own finalized records.
      * Professors see only their own records; admins see all.
      */
     public function index(): AttendanceRecordCollection
     {
+        $user = Auth::user();
+
+        // Students: view only their finalized attendance records
+        if ($user->role === 'student') {
+            $records = AttendanceRecord::with(['sectionSubject.subject'])
+                ->where('student_id', $user->student->id)
+                ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
+                ->paginate(15);
+
+            return new AttendanceRecordCollection($records);
+        }
+
+        // Professors/Admins: existing scoping logic
         $professorId = $this->getProfessorId();
         
         $attendanceRecords = AttendanceRecord::with(['student.user', 'sectionSubject.subject'])
@@ -140,10 +154,32 @@ class AttendanceRecordController extends Controller implements HasMiddleware
 
     /**
      * Get a single attendance record by ID.
+     * Students can only view their own records when class standing is finalized.
      * Professors can only see their own records; admins can see all.
      */
     public function show(int $id): JsonResponse
     {
+        $user = Auth::user();
+
+        // Students: can only view their own finalized records
+        if ($user->role === 'student') {
+            $record = AttendanceRecord::with(['student.user', 'sectionSubject.subject'])->find($id);
+
+            if (!$record) {
+                return response()->json(['message' => 'Attendance record not found'], 404);
+            }
+
+            if ($record->student_id !== $user->student->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            if ($record->classStanding->status !== 'finalized') {
+                return response()->json(['message' => 'Not yet available'], 403);
+            }
+
+            return (new AttendanceRecordResource($record))->response();
+        }
+
         $professorId = $this->getProfessorId();
         
         $query = AttendanceRecord::with(['student.user', 'sectionSubject.subject']);

@@ -62,8 +62,13 @@ class GradeCalculationService {
         return round($weightedSum, 2);
     }
 
+    /**
+     * Calculate periodic grade for a class standing.
+     * Returns null if major exam score is null or 0 (exam not yet taken).
+     * Formula: ((weightedSum * 2) + majorExam) / 3, converted to 1.0-5.0 scale.
+     */
     public function calculatePeriodicGrade(ClassStanding $classStanding): ?float { 
-        if ($classStanding->major_exam_score === null) {
+        if ($classStanding->major_exam_score === null || $classStanding->major_exam_score === 0) {
             return null;
         }
         

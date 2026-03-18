@@ -49,6 +49,18 @@ class QuizRecordController extends Controller implements HasMiddleware
 
     public function index(): QuizRecordCollection
     {
+        $user = Auth::user();
+
+        if ($user->role === 'student') {
+            // Get the student's records only
+            $records = QuizRecord::with(['sectionSubject.subject'])
+                ->where('student_id', $user->student->id)
+                ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
+                ->paginate(15);
+
+            return new QuizRecordCollection($records);
+        }
+
         $professorId = $this->getProfessorId();
         
         $quizRecords = QuizRecord::with(['student.user', 'sectionSubject.subject'])
@@ -136,10 +148,33 @@ class QuizRecordController extends Controller implements HasMiddleware
 
     /**
      * Get a single quiz record by ID.
+     * Students can only view their own records when class standing is finalized.
      * Professors can only see their own records; admins can see all.
      */
     public function show(int $id): JsonResponse
     {
+        $user = Auth::user();
+
+        // Students: can only view their own finalized records
+        if ($user->role === 'student') {
+            $record = QuizRecord::with(['student.user', 'sectionSubject.subject'])->find($id);
+
+            if (!$record) {
+                return response()->json(['message' => 'Quiz record not found'], 404);
+            }
+
+            if ($record->student_id !== $user->student->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            if ($record->classStanding->status !== 'finalized') {
+                return response()->json(['message' => 'Not yet available'], 403);
+            }
+
+            return (new QuizRecordResource($record))->response();
+        }
+
+        // Professors/Admins: existing scoping logic
         $professorId = $this->getProfessorId();
         
         $query = QuizRecord::with(['student.user', 'sectionSubject.subject']);

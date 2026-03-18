@@ -2,17 +2,32 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Subject;
 use Illuminate\Http\Request;
 
 class SubjectController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(\App\Models\Subject::all());
+       $this->authorize('finalize', Subject::class);
+
+       $query = Subject::query();
+
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where('subject_name', 'like', "%{$search}%");
+        }
+
+        if ($request->has('sort_by')) {
+            $sort = $request->sort_by === 'desc' ? 'desc' : 'asc';
+            $query->orderBy('created_at', $sort);
+        }
+        return response()->json($query->paginate(15));
     }
 
     public function store(Request $request)
     {
+        $this->authorize('finalize', Subject::class);
         $validated = $request->validate([
             'subject_name' => 'required|string|max:150',
             'subject_code' => 'required|string|max:20|unique:subjects',
@@ -20,17 +35,19 @@ class SubjectController extends Controller
             'is_minor' => 'boolean'
         ]);
         
-        $subject = \App\Models\Subject::create($validated);
+        $subject = Subject::create($validated);
         return response()->json($subject, 201);
     }
 
-    public function show(\App\Models\Subject $subject)
+    public function show(Subject $subject)
     {
-        return response()->json($subject);
+        $this->authorize('finalize', $subject);
+        return response()->json($subject->load('sectionSubjects.section', 'sectionSubjects.professor'));
     }
 
-    public function update(Request $request, \App\Models\Subject $subject)
+    public function update(Request $request, Subject $subject)
     {
+        $this->authorize('finalize', $subject);
         $validated = $request->validate([
             'subject_name' => 'string|max:150',
             'subject_code' => 'string|max:20|unique:subjects,subject_code,' . $subject->id,
@@ -42,8 +59,9 @@ class SubjectController extends Controller
         return response()->json($subject);
     }
 
-    public function destroy(\App\Models\Subject $subject)
+    public function destroy(Subject $subject)
     {
+        $this->authorize('finalize', $subject);
         $subject->delete();
         return response()->json(null, 204);
     }

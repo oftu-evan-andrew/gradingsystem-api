@@ -57,6 +57,11 @@ class PeriodicGrade extends Model
                 ]);
 
                 $finalGrade->final_grade = $finalGradeValue;
+
+                if ($periodicGrade->status === 'submitted') {
+                    $finalGrade->status = 'submitted';
+                }
+
                 $finalGrade->save();
             }
         });

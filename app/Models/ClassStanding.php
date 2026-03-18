@@ -47,8 +47,14 @@ class ClassStanding extends Model
                 'grading_period' => $classStanding->grading_period
             ]);
 
+                
             $periodicGrade->periodic_grade = app(GradeCalculationService::class) 
                 ->calculatePeriodicGrade($classStanding);
+
+            if ($classStanding->status === 'submitted') {
+                $periodicGrade->status = 'submitted';
+            }
+
             $periodicGrade->save();
         });
     }

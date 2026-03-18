@@ -39,20 +39,19 @@ class StudentFinalGrade extends Model
         return $this->belongsTo(Professor::class, 'last_modified_by');
     }
 
-    protected static function booted() { 
-        static::updated(function ($finalGrade) {
+    protected static function booted() {
+        static::updated(function ($finalGrade) { 
+            // Only recalculate GPA when status changes to 'finalized'
             if ($finalGrade->wasChanged('status') && $finalGrade->status === 'finalized') {
-                $student = $finalGrade->student; 
+                $student = $finalGrade->student;
 
-                // Calculate Cumulative GPA
                 $cumulativeGpa = app(GradeCalculationService::class) 
                     ->calculateCumulativeGpa($student);
-                
-                // Find or create StudentGpa for this semester
-                $sectionSubject = $finalGrade->sectionSubject;
+
+                $sectionSubject = $finalGrade->sectionSubject; 
                 $gpa = StudentGpa::firstOrNew([
                     'student_id' => $student->id,
-                    'school_year' => $sectionSubject->section->school_year ?? null,
+                    'school_year' => $sectionSubject->section->school_year ?? null, 
                     'semester' => $sectionSubject->semester ?? null,
                 ]);
 

@@ -51,10 +51,24 @@ class RecitationRecordController extends Controller implements HasMiddleware
 
     /**
      * Get all recitation records with pagination.
+     * Students see only their own finalized records.
      * Professors see only their own records; admins see all.
      */
     public function index(): RecitationRecordCollection
     {
+        $user = Auth::user();
+
+        // Students: view only their finalized recitation records
+        if ($user->role === 'student') {
+            $records = RecitationRecord::with(['sectionSubject.subject'])
+                ->where('student_id', $user->student->id)
+                ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
+                ->paginate(15);
+
+            return new RecitationRecordCollection($records);
+        }
+
+        // Professors/Admins: existing scoping logic
         $professorId = $this->getProfessorId();
         
         $recitationRecords = RecitationRecord::with(['student.user', 'sectionSubject.subject'])
@@ -137,10 +151,32 @@ class RecitationRecordController extends Controller implements HasMiddleware
 
     /**
      * Get a single recitation record by ID.
+     * Students can only view their own records when class standing is finalized.
      * Professors can only see their own records; admins can see all.
      */
     public function show(int $id): JsonResponse
     {
+        $user = Auth::user();
+
+        // Students: can only view their own finalized records
+        if ($user->role === 'student') {
+            $record = RecitationRecord::with(['student.user', 'sectionSubject.subject'])->find($id);
+
+            if (!$record) {
+                return response()->json(['message' => 'Recitation record not found'], 404);
+            }
+
+            if ($record->student_id !== $user->student->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            if ($record->classStanding->status !== 'finalized') {
+                return response()->json(['message' => 'Not yet available'], 403);
+            }
+
+            return (new RecitationRecordResource($record))->response();
+        }
+
         $professorId = $this->getProfessorId();
         
         $query = RecitationRecord::with(['student.user', 'sectionSubject.subject']);

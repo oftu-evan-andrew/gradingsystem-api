@@ -50,10 +50,24 @@ class ProjectRecordController extends Controller implements HasMiddleware
 
     /**
      * Get all project records with pagination.
+     * Students see only their own finalized records.
      * Professors see only their own records; admins see all.
      */
     public function index(): ProjectRecordCollection
     {
+        $user = Auth::user();
+
+        // Students: view only their finalized project records
+        if ($user->role === 'student') {
+            $records = ProjectRecord::with(['sectionSubject.subject'])
+                ->where('student_id', $user->student->id)
+                ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
+                ->paginate(15);
+
+            return new ProjectRecordCollection($records);
+        }
+
+        // Professors/Admins: existing scoping logic
         $professorId = $this->getProfessorId();
         
         $projectRecords = ProjectRecord::with(['student.user', 'sectionSubject.subject'])
@@ -145,10 +159,32 @@ class ProjectRecordController extends Controller implements HasMiddleware
 
     /**
      * Get a single project record by ID.
+     * Students can only view their own records when class standing is finalized.
      * Professors can only see their own records; admins can see all.
      */
     public function show(int $id): JsonResponse
     {
+        $user = Auth::user();
+
+        // Students: can only view their own finalized records
+        if ($user->role === 'student') {
+            $record = ProjectRecord::with(['student.user', 'sectionSubject.subject'])->find($id);
+
+            if (!$record) {
+                return response()->json(['message' => 'Project record not found'], 404);
+            }
+
+            if ($record->student_id !== $user->student->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            if ($record->classStanding->status !== 'finalized') {
+                return response()->json(['message' => 'Not yet available'], 403);
+            }
+
+            return (new ProjectRecordResource($record))->response();
+        }
+
         $professorId = $this->getProfessorId();
         
         $query = ProjectRecord::with(['student.user', 'sectionSubject.subject']);

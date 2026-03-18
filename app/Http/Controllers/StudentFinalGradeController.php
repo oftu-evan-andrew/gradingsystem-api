@@ -15,12 +15,13 @@ use App\Http\Requests\StoreStudentFinalGradeRequest;
 use App\Http\Requests\UpdateStudentFinalGradeRequest;
 use App\Http\Resources\StudentFinalGradeResource;
 use App\Http\Resources\StudentFinalGradeCollection;
+use App\Models\PeriodicGrade;
+use App\Models\Student;
 
 
 class StudentFinalGradeController extends Controller implements HasMiddleware
 {
     // This is still incomplete
-
     public static function middleware() {
         return [
             new Middleware(function ($request, $next) {
@@ -135,7 +136,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
             $studentsToRecalculate = [];
 
             try {
-                DB::transaction(function () use ($validated, $records, &$studentsToRecalculate) {
+                StudentFinalGrade::withoutEvents(function () use ($validated, $records, &$studentsToRecalculate) {
                     foreach ($validated['grades'] as $gradeData) {
                         if ($record = $records->get($gradeData['student_final_grade_id'])) {
                             $this->authorize('finalize', $record);
@@ -150,11 +151,15 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
                             ]);
 
                             if ($previousStatus !== 'finalized' && $newStatus === 'finalized') {
-                                $studentsToRecalculate[$record->id] = $record;
+                                $studentsToRecalculate[$record->student_id] = $record->student;
                             }
                         }
                     }
                 });
+
+                foreach ($studentsToRecalculate as $student) { 
+                    $this->recalculateGpa($student);
+                }
             } catch (\Exception $e) {
                 return response()->json(['message' => 'Failed to update records: ' . $e->getMessage()], 500);
             }
@@ -221,7 +226,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
 
         $this->authorize('finalize', $studentFinalGrade);
 
-        $studentFinalGrade->status = 'finalized';
+        $studentFinalGrade->status = 'submitted';
         $studentFinalGrade->save();
         $studentFinalGrade->load(['student.user', 'sectionSubject.subject']);
 
@@ -229,5 +234,74 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
             'message' => 'Grade finalized successfully',
             'data' => new StudentFinalGradeResource($studentFinalGrade)
         ]);
+    }
+
+    /**
+     * Approve a final grade (Admin only).
+     * Checks if ALL grading periods (prelims, midterm, finals) are finalized
+     * before allowing approval. Triggers GPA recalculation.
+     */
+    public function approve($id): JsonResponse { 
+        $finalGrade = StudentFinalGrade::find($id);
+
+        if (!$finalGrade) { 
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $this->authorize('finalize', $finalGrade);
+
+        // Checks if all periodic grades for this student+subject are finalized. 
+        $allPeriodicGrades = PeriodicGrade::where('student_id', $finalGrade->student_id)
+            ->whereHas('classStanding', function ($query) use ($finalGrade) {
+                $query->where('section_subject_id', $finalGrade->section_subject_id);
+            })
+            ->get();
+
+        $allFinalized = $allPeriodicGrades->every(fn($pg) => $pg->status === 'finalized');
+
+        if (!$allFinalized) { 
+            $pendingPeriods = $allPeriodicGrades 
+                ->where('status', '!=', 'finalized')
+                ->pluck('grading_period')
+                ->toArray();
+            
+            return response()->json([
+                'message' => 'Cannot approve. Not all grading periods are finalized', 
+                'pending_periods' => $pendingPeriods
+            ], 422);
+        }
+
+        $finalGrade->status = 'finalized';
+        $finalGrade->save();
+        $finalGrade->load(['student.user', 'sectionSubject.subject']);
+
+        return response()->json([
+            'message' => 'Grade approved successfully',
+            'data' => new StudentFinalGradeResource($finalGrade)
+        ]);
+    }
+
+    /**
+     * Recalculate and update the student's cumulative GPA.
+     * Used after bulk grade operations to optimize GPA calculations.
+     */
+    private function recalculateGpa(Student $student): void { 
+        $gpa = app(GradeCalculationService::class)->calculateCumulativeGpa($student);
+
+        $finalGrade = $student->studentFinalGrades() 
+            ->where('status', 'finalized')
+            ->latest()
+            ->first();
+
+        if ($finalGrade && $finalGrade->sectionSubject) {
+            StudentGpa::updateOrCreate(
+                [
+                    'student_id' => $student->id,
+                    'school_year' => $finalGrade->sectionSubject->section->school_year ?? null,
+                    'semester' => $finalGrade->sectionSubject->semester ?? null,
+                ],
+                ['cumulative_gpa' => $gpa]
+            );
+        }
     }
 }
