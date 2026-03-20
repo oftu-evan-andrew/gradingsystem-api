@@ -282,6 +282,120 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
     }
 
     /**
+     * Bulk approve final grades for a section_subject.
+     * Admin-only endpoint. Approves all students' final grades for the section,
+     * and calculates GPA for each student.
+     *
+     * Prerequisites: All grading periods (Prelims, Midterms, Finals) must be
+     * finalized via the finalizeBulk endpoint before calling this.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function approveBulk(Request $request): JsonResponse
+    {
+        // Validate request input
+        $validated = $request->validate([
+            'section_subject_id' => 'required|uuid|exists:section_subjects,id',
+        ]);
+
+        // Only admins can perform bulk approval
+        if ($request->user()->role !== 'admin') {
+            return response()->json(['message' => 'Forbidden - Admin access required'], 403);
+        }
+
+        // Get all final grades for this section_subject
+        $finalGrades = StudentFinalGrade::where('section_subject_id', $validated['section_subject_id'])
+            ->with('student')
+            ->get();
+
+        // Check if there are any final grades to approve
+        if ($finalGrades->isEmpty()) {
+            return response()->json(['message' => 'No final grades found for this section'], 404);
+        }
+
+        // Track students with pending grading periods
+        $studentsWithPendingPeriods = [];
+
+        // Check if ALL grading periods are finalized for EACH student
+        foreach ($finalGrades as $finalGrade) {
+            $allPeriodicGrades = PeriodicGrade::where('student_id', $finalGrade->student_id)
+                ->whereHas('classStanding', function ($query) use ($finalGrade) {
+                    $query->where('section_subject_id', $finalGrade->section_subject_id);
+                })
+                ->get();
+
+            $allFinalized = $allPeriodicGrades->every(fn($pg) => $pg->status === 'finalized');
+
+            if (!$allFinalized) {
+                // Get list of pending periods for this student
+                $pendingPeriods = $allPeriodicGrades
+                    ->where('status', '!=', 'finalized')
+                    ->map(fn($pg) => [
+                        'period' => $pg->grading_period,
+                        'period_name' => $this->getGradingPeriodName($pg->grading_period),
+                    ])
+                    ->values();
+
+                $studentsWithPendingPeriods[] = [
+                    'student_id' => $finalGrade->student_id,
+                    'student_name' => $finalGrade->student->user->name ?? 'Unknown',
+                    'pending_periods' => $pendingPeriods,
+                ];
+            }
+        }
+
+        // If any student has pending periods, reject the entire bulk approval
+        if (!empty($studentsWithPendingPeriods)) {
+            return response()->json([
+                'message' => 'Cannot approve. Some students have not finalized all grading periods.',
+                'pending_students' => $studentsWithPendingPeriods,
+            ], 422);
+        }
+
+        // Perform bulk approval in a transaction (all-or-nothing)
+        try {
+            DB::transaction(function () use ($finalGrades) {
+                // Step 1: Approve all final grades (set status to 'finalized')
+                StudentFinalGrade::where('section_subject_id', $finalGrades->first()->section_subject_id)
+                    ->update(['status' => 'finalized']);
+
+                // Step 2: Recalculate GPA for each student
+                foreach ($finalGrades as $finalGrade) {
+                    $this->recalculateGpa($finalGrade->student);
+                }
+            });
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to approve grades: ' . $e->getMessage()], 500);
+        }
+
+        return response()->json([
+            'message' => "Approved {$finalGrades->count()} final grades, GPA calculated",
+            'data' => [
+                'final_grades_approved' => $finalGrades->count(),
+                'gpa_calculated' => true,
+                'section_subject_id' => $validated['section_subject_id'],
+            ],
+        ]);
+    }
+
+    /**
+     * Helper method to convert grading period number to name.
+     *
+     * @param int $period
+     * @return string
+     */
+    private function getGradingPeriodName(int $period): string
+    {
+        return match ($period) {
+            1 => 'Prelims',
+            2 => 'Midterms',
+            3 => 'Finals',
+            default => "Period {$period}",
+        };
+    }
+
+    /**
      * Recalculate and update the student's cumulative GPA.
      * Used after bulk grade operations to optimize GPA calculations.
      */

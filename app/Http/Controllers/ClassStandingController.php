@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use App\Models\ClassStanding;
+use App\Models\PeriodicGrade;
+use App\Models\SectionSubject;
 use App\Http\Resources\ClassStandingCollection;
 use App\Http\Resources\ClassStandingResource;
 
@@ -238,6 +240,111 @@ class ClassStandingController extends Controller implements HasMiddleware
             'message' => 'Grade finalized successfully',
             'data' => new ClassStandingResource($classStanding)
         ]);
+    }
+
+    /**
+     * Bulk finalize ClassStandings and PeriodicGrades for a section+grading_period.
+     * Admin-only endpoint. Finalizes all students' grades for the specified period,
+     * allowing students to view their grades for that grading period.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function finalizeBulk(Request $request): JsonResponse
+    {
+        // Validate request inputs
+        $validated = $request->validate([
+            'section_subject_id' => 'required|uuid|exists:section_subjects,id',
+            'grading_period' => 'required|integer|min:1|max:3',
+        ]);
+
+        // Only admins can perform bulk finalization
+        if ($request->user()->role !== 'admin') {
+            return response()->json(['message' => 'Forbidden - Admin access required'], 403);
+        }
+
+        // Fetch the section subject to get section and subject info for response
+        $sectionSubject = SectionSubject::with(['section', 'subject'])
+            ->find($validated['section_subject_id']);
+
+        // Get all class standings for this section+period
+        $classStandings = ClassStanding::where('section_subject_id', $validated['section_subject_id'])
+            ->where('grading_period', $validated['grading_period'])
+            ->get();
+
+        // Check if there are any class standings to finalize
+        if ($classStandings->isEmpty()) {
+            return response()->json(['message' => 'No class standings found for this section and period'], 404);
+        }
+
+        // Check if all students have submitted their grades
+        // Only submitted grades can be finalized
+        $pendingStudents = $classStandings->filter(fn($cs) => $cs->status !== 'submitted');
+
+        if ($pendingStudents->isNotEmpty()) {
+            // Return list of students who haven't submitted yet
+            $pendingList = $pendingStudents->map(fn($cs) => [
+                'student_id' => $cs->student_id,
+                'student_name' => $cs->student->user->name ?? 'Unknown',
+                'current_status' => $cs->status,
+            ]);
+
+            return response()->json([
+                'message' => 'Cannot finalize. Some students have not submitted their grades.',
+                'pending_students' => $pendingList->values(),
+            ], 422);
+        }
+
+        // Perform bulk finalization in a transaction (all-or-nothing)
+        try {
+            DB::transaction(function () use ($classStandings, $validated) {
+                // Step 1: Finalize all class standings for this section+period
+                ClassStanding::where('section_subject_id', $validated['section_subject_id'])
+                    ->where('grading_period', $validated['grading_period'])
+                    ->update(['status' => 'finalized']);
+
+                // Step 2: Finalize all periodic grades for this section+period
+                // This links class standings to their periodic grades via student+grading_period
+                $periodicGrades = PeriodicGrade::whereIn('class_standing_id', $classStandings->pluck('id'))
+                    ->get();
+
+                PeriodicGrade::whereIn('id', $periodicGrades->pluck('id'))
+                    ->update(['status' => 'finalized']);
+            });
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to finalize grades: ' . $e->getMessage()], 500);
+        }
+
+        // Get fresh data for response summary
+        $classStandingsCount = $classStandings->count();
+        $periodicGradesCount = PeriodicGrade::whereIn('class_standing_id', $classStandings->pluck('id'))->count();
+
+        return response()->json([
+            'message' => "Finalized {$classStandingsCount} class standings and {$periodicGradesCount} periodic grades for Section {$sectionSubject->section->name} - {$sectionSubject->subject->name}, " . $this->getGradingPeriodName($validated['grading_period']),
+            'data' => [
+                'class_standings_finalized' => $classStandingsCount,
+                'periodic_grades_finalized' => $periodicGradesCount,
+                'section_subject_id' => $validated['section_subject_id'],
+                'grading_period' => $validated['grading_period'],
+                'grading_period_name' => $this->getGradingPeriodName($validated['grading_period']),
+            ],
+        ]);
+    }
+
+    /**
+     * Helper method to convert grading period number to name.
+     *
+     * @param int $period
+     * @return string
+     */
+    private function getGradingPeriodName(int $period): string
+    {
+        return match ($period) {
+            1 => 'Prelims',
+            2 => 'Midterms',
+            3 => 'Finals',
+            default => "Period {$period}",
+        };
     }
     
     private function calculateRating(?float $pts, ?float $items): ?float

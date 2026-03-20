@@ -44,6 +44,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('periodic-grades/{id}/finalize', [PeriodicGradeController::class, 'finalize']);
     Route::post('student-final-grades/{id}/finalize', [StudentFinalGradeController::class, 'finalize']);
 
+    // Bulk finalize (admin-only middleware check in controller)
+    Route::post('class-standings/bulk/finalize', [ClassStandingController::class, 'finalizeBulk']);
+    Route::post('student-final-grades/bulk/approve', [StudentFinalGradeController::class, 'approveBulk']);
+
     // Grading Records
     Route::middleware(['can:access-professor-content'])->group(function () {
         Route::apiResource('attendance-records', AttendanceRecordController::class);
