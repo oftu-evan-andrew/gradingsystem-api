@@ -1,14 +1,29 @@
 <?php
 
-namespace App\Policies;
+namespace App\Policies; 
 
 use App\Models\User;
 use App\Models\SectionSubject;
 
-class SectionSubjectPolicy
+class SectionSubjectPolicy 
 {
-    public function finalize(User $user, SectionSubject $sectionSubject): bool
-    {
+    public function viewAny(User $user): bool { 
         return in_array($user->role, ['admin', 'professor']);
+    }
+
+    public function view(User $user, SectionSubject $sectionSubject): bool { 
+        return in_array($user->role, ['admin', 'professor']);
+    }
+
+    public function create(User $user): bool { 
+        return $user->role === 'admin';
+    }
+
+    public function update(User $user, SectionSubject $sectionSubject): bool { 
+        return $user->role === 'admin';
+    }
+
+    public function delete(User $user, SectionSubject $sectionSubject): bool { 
+        return $user->role === 'admin';
     }
 }

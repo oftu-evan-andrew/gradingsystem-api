@@ -86,7 +86,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
             }
 
             $records = PeriodicGrade::with(['student.user', 'classStanding'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([
@@ -149,7 +149,7 @@ class PeriodicGradeController extends Controller implements HasMiddleware
             }
 
             $records = PeriodicGrade::with(['student.user', 'classStanding'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([

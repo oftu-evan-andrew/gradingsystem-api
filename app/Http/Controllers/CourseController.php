@@ -9,7 +9,7 @@ class CourseController extends Controller
 {
     public function index(Request $request)
     {
-       $this->authorize('finalize', Course::class);
+       $this->authorize('viewAny', Course::class);
 
        $query = Course::query();
 
@@ -23,12 +23,12 @@ class CourseController extends Controller
             $query->orderBy('created_at', $sort);
         }
 
-        return response()->json($query->paginate(15));
+        return response()->json($query->withCount('sections')->paginate(15));
     }
 
     public function store(Request $request)
     {
-        $this->authorize('finalize', Course::class);
+        $this->authorize('create', Course::class);
         // Add basic validation and creation
         $validated = $request->validate([
             'course_name' => 'required|string|max:100'
@@ -40,13 +40,13 @@ class CourseController extends Controller
 
     public function show(Course $course)
     {
-        $this->authorize('finalize', $course);
+        $this->authorize('view', $course);
         return response()->json($course->load('sections'));
     }
 
     public function update(Request $request, Course $course)
     {
-        $this->authorize('finalize', $course);
+        $this->authorize('update', $course);
         $validated = $request->validate([
             'course_name' => 'required|string|max:100'
         ]);
@@ -57,7 +57,7 @@ class CourseController extends Controller
 
     public function destroy(Course $course)
     {
-        $this->authorize('finalize', $course);
+        $this->authorize('delete', $course);
         $course->delete();
         return response()->json(null, 204);
     }

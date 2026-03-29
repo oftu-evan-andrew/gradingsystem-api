@@ -9,7 +9,7 @@ class SubjectController extends Controller
 {
     public function index(Request $request)
     {
-       $this->authorize('finalize', Subject::class);
+       $this->authorize('viewAny', Subject::class);
 
        $query = Subject::query();
 
@@ -22,12 +22,12 @@ class SubjectController extends Controller
             $sort = $request->sort_by === 'desc' ? 'desc' : 'asc';
             $query->orderBy('created_at', $sort);
         }
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($request->input('per_page', 15)));
     }
 
     public function store(Request $request)
     {
-        $this->authorize('finalize', Subject::class);
+        $this->authorize('create', Subject::class);
         $validated = $request->validate([
             'subject_name' => 'required|string|max:150',
             'subject_code' => 'required|string|max:20|unique:subjects',
@@ -41,13 +41,13 @@ class SubjectController extends Controller
 
     public function show(Subject $subject)
     {
-        $this->authorize('finalize', $subject);
+        $this->authorize('view', $subject);
         return response()->json($subject->load('sectionSubjects.section', 'sectionSubjects.professor'));
     }
 
     public function update(Request $request, Subject $subject)
     {
-        $this->authorize('finalize', $subject);
+        $this->authorize('update', $subject);
         $validated = $request->validate([
             'subject_name' => 'string|max:150',
             'subject_code' => 'string|max:20|unique:subjects,subject_code,' . $subject->id,
@@ -61,7 +61,7 @@ class SubjectController extends Controller
 
     public function destroy(Subject $subject)
     {
-        $this->authorize('finalize', $subject);
+        $this->authorize('delete', $subject);
         $subject->delete();
         return response()->json(null, 204);
     }

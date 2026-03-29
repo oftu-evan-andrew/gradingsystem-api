@@ -10,7 +10,7 @@ class StudentController extends Controller
 {
     public function index(Request $request)
     {
-       $this->authorize('finalize', Student::class);
+       $this->authorize('viewAny', Student::class);
        $professorId = $this->getProfessorId();
 
        $query = Student::with(['user', 'section'])
@@ -36,12 +36,12 @@ class StudentController extends Controller
             $sort = $request->sort_by === 'desc' ? 'desc' : 'asc';
             $query->orderBy('created_at', $sort);
         }
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($request->input('per_page', 15)));
     }
 
     public function store(Request $request)
     {
-        $this->authorize('finalize', Student::class);
+        $this->authorize('create', Student::class);
         $validated = $request->validate([
             'user_id' => 'required|uuid|exists:users,id|unique:students,user_id',
             'section_id' => 'required|uuid|exists:sections,section_id',
@@ -54,13 +54,13 @@ class StudentController extends Controller
 
     public function show(Student $student)
     {
-        $this->authorize('finalize', $student);
+        $this->authorize('view', $student);
         return response()->json($student->load(['user', 'section']));
     }
 
     public function update(Request $request, Student $student)
     {
-        $this->authorize('finalize', $student);
+        $this->authorize('update', $student);
         $validated = $request->validate([
             'section_id' => 'uuid|exists:sections,section_id',
             'is_irregular' => 'boolean'
@@ -72,7 +72,7 @@ class StudentController extends Controller
 
     public function destroy(Student $student)
     {
-        $this->authorize('finalize', $student);
+        $this->authorize('delete', $student);
         $student->delete();
         return response()->json(null, 204);
     }

@@ -16,6 +16,7 @@ class UpdateQuizRecordRequest extends FormRequest
         return [
             'type' => 'required|in:quiz',
             'id' => 'required_without:grades|sometimes|required|exists:quiz_records,id',
+            'quiz_number' => 'nullable|integer|min:1',
             'quiz_title' => 'nullable|string|max:150',
             'pts' => 'nullable|numeric|min:0',
             'items' => 'nullable|numeric|min:1',

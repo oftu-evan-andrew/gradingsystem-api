@@ -15,37 +15,27 @@ class CurriculumSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->createProfessors();
+        $this->createProfessor();
         $this->createCourses();
         $this->createSubjects();
         $this->createSectionsAndSectionSubjects();
     }
 
-    private function createProfessors(): void
+    private function createProfessor(): void
     {
-        $professors = [
-            ['first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'email' => 'juan.delacruz@example.com'],
-            ['first_name' => 'Maria', 'last_name' => 'Santos', 'email' => 'maria.santos@example.com'],
-            ['first_name' => 'Pedro', 'last_name' => 'Penduko', 'email' => 'pedro.penduko@example.com'],
-            ['first_name' => 'Ana', 'last_name' => 'Reyes', 'email' => 'ana.reyes@example.com'],
-            ['first_name' => 'Jose', 'last_name' => 'Rizal', 'email' => 'jose.rizal@example.com'],
-        ];
+        $user = User::firstOrCreate(
+            ['email' => 'professor@example.com'],
+            [
+                'first_name' => 'John',
+                'last_name' => 'Smith',
+                'password' => Hash::make('password123'),
+                'role' => 'professor',
+            ]
+        );
 
-        foreach ($professors as $prof) {
-            $user = User::firstOrCreate(
-                ['email' => $prof['email']],
-                [
-                    'first_name' => $prof['first_name'],
-                    'last_name' => $prof['last_name'],
-                    'password' => Hash::make('password123'),
-                    'role' => 'professor',
-                ]
-            );
+        Professor::firstOrCreate(['user_id' => $user->id]);
 
-            Professor::firstOrCreate(['user_id' => $user->id]);
-        }
-
-        $this->command->info('Professors created/verified: ' . count($professors));
+        $this->command->info('Professor created/verified: professor@example.com / password123');
     }
 
     private function createCourses(): void
@@ -158,8 +148,7 @@ class CurriculumSeeder extends Seeder
             ['BG8EA', 4, 'Computer Engineering', ['TE4', 'CPE4224', 'CPE4225', 'CPE4226', 'TP1']],
         ];
 
-        $professors = Professor::all();
-        $professorIndex = 0;
+        $professor = Professor::first();
 
         foreach ($sectionConfigs as $config) {
             [$sectionName, $yearLevel, $courseName, $subjectCodes] = $config;
@@ -175,9 +164,7 @@ class CurriculumSeeder extends Seeder
 
             foreach ($subjectCodes as $subjectCode) {
                 $subject = Subject::where('subject_code', $subjectCode)->first();
-                if ($subject) {
-                    $professor = $professors[$professorIndex % count($professors)];
-                    
+                if ($subject && $professor) {
                     SectionSubject::firstOrCreate(
                         [
                             'section_id' => $section->section_id,
@@ -188,7 +175,6 @@ class CurriculumSeeder extends Seeder
                     );
                 }
             }
-            $professorIndex++;
         }
 
         $this->command->info('Sections and section-subjects created/verified');

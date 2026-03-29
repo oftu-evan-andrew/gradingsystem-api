@@ -7,23 +7,23 @@ use App\Models\Student;
 
 class StudentPolicy 
 {
-    public function view(User $user, Student $student): bool {
-        if ($user->role === 'student') {
-            return $student->status === 'finalized';
-        }
-        return true;
+    public function viewAny(User $user): bool { 
+        return in_array($user->role, ['admin', 'professor']);
     }
 
-    public function finalize(User $user, Student $student): bool {
-        if ($user->role === 'admin') {
-            return true;
-        }
+    public function view(User $user, Student $student): bool { 
+        return in_array($user->role, ['admin', 'professor']);
+    }
 
-        $professor = $user->professor; 
-        if (!$professor) {
-            return false; 
-        }
+    public function create(User $user): bool { 
+        return $user->role === 'admin';
+    }
 
-        return $student->sectionSubject->professor_id === $professor->professor_id;
+    public function update(User $user, Student $student): bool { 
+        return $user->role === 'admin';
+    }
+
+    public function delete(User $user, Student $student): bool { 
+        return $user->role === 'admin';
     }
 }

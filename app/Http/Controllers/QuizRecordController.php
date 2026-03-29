@@ -50,11 +50,13 @@ class QuizRecordController extends Controller implements HasMiddleware
     public function index(): QuizRecordCollection
     {
         $user = Auth::user();
+        $request = request();
 
         if ($user->role === 'student') {
-            // Get the student's records only
             $records = QuizRecord::with(['sectionSubject.subject'])
-                ->where('student_id', $user->student->id)
+                ->where('student_id', $user->student->student_id)
+                ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+                ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
                 ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
                 ->paginate(15);
 
@@ -65,6 +67,8 @@ class QuizRecordController extends Controller implements HasMiddleware
         
         $quizRecords = QuizRecord::with(['student.user', 'sectionSubject.subject'])
             ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+            ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+            ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
             ->paginate(15);
         
         return new QuizRecordCollection($quizRecords);
@@ -100,15 +104,17 @@ class QuizRecordController extends Controller implements HasMiddleware
                 $records = DB::transaction(function () use ($validated, $grades, $professorId) {
                 $createdRecords = [];
                 foreach ($grades as $grade) {
-                    $createdRecords[] = QuizRecord::create([
+                    $record = QuizRecord::firstOrNew([
                         'student_id' => $grade['student_id'],
                         'section_subject_id' => $validated['section_subject_id'],
-                        'professor_id' => $professorId,
                         'grading_period' => $validated['grading_period'],
                         'quiz_number' => $validated['quiz_number'],
-                        'quiz_title' => $validated['quiz_title'] ?? null,
-                        'rating' => $this->calculateRating($grade['pts'] ?? null, $grade['items'] ?? null),
                     ]);
+                    $record->professor_id = $professorId;
+                    $record->quiz_title = $validated['quiz_title'] ?? null;
+                    $record->rating = $this->calculateRating($grade['pts'] ?? null, $grade['items'] ?? null);
+                    $record->save();
+                    $createdRecords[] = $record;
                 }
                 return $createdRecords;
             });
@@ -118,7 +124,7 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
 
             $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([
@@ -127,6 +133,9 @@ class QuizRecordController extends Controller implements HasMiddleware
             ], 201);
         } else {
             // Single record creation
+            if (!isset($validated['student_id'])) {
+                return response()->json(['message' => 'student_id is required'], 422);
+            }
             $record = QuizRecord::create([
                 'student_id' => $validated['student_id'],
                 'section_subject_id' => $validated['section_subject_id'],
@@ -163,7 +172,7 @@ class QuizRecordController extends Controller implements HasMiddleware
                 return response()->json(['message' => 'Quiz record not found'], 404);
             }
 
-            if ($record->student_id !== $user->student->id) {
+            if ($record->student_id !== $user->student->student_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
 
@@ -198,7 +207,7 @@ class QuizRecordController extends Controller implements HasMiddleware
      * - Single: id field with rating/quiz_title
      * - Bulk: grades array with quiz_record_id and rating for each
      */
-    public function update(UpdateQuizRecordRequest $request): JsonResponse
+    public function update(UpdateQuizRecordRequest $request, int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
@@ -227,7 +236,7 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
 
             $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
             
             return response()->json([
@@ -237,7 +246,7 @@ class QuizRecordController extends Controller implements HasMiddleware
 
         } else {
             // Single record update
-            $record = QuizRecord::where('id', $validated['id'])
+            $record = QuizRecord::where('id', $id)
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
             
@@ -246,8 +255,9 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
             
             $record->update([
-                'rating' => $this->calculateRating($validated['pts'] ?? null, $validated['items'] ?? null),
+                'quiz_number' => $validated['quiz_number'] ?? $record->quiz_number,
                 'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title,
+                'rating' => $this->calculateRating($validated['pts'] ?? null, $validated['items'] ?? null),
             ]);
             
             $record->load(['student.user', 'sectionSubject.subject']);

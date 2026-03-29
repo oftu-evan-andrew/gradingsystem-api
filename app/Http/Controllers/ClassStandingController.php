@@ -46,15 +46,17 @@ class ClassStandingController extends Controller implements HasMiddleware
     
 
     // Get all class standing records with pagination.
-    public function index()
+    public function index(Request $request)
     {
         $professorId = $this->getProfessorId();
 
         $classStandings = ClassStanding::with(['student.user', 'sectionSubject.subject'])
+            ->when($request->section_subject_id, fn($q, $ssId) => $q->where('section_subject_id', $ssId))
+            ->when($request->grading_period, fn($q, $period) => $q->where('grading_period', $period))
             ->when($professorId, fn($q) => $q->whereHas('sectionSubject', fn($sq) => 
                 $sq->where('professor_id', $professorId)
             ))
-            ->paginate(15);
+            ->paginate(1000);
 
         return new ClassStandingCollection($classStandings);
     }
@@ -67,7 +69,7 @@ class ClassStandingController extends Controller implements HasMiddleware
     {
         $validated = $request->validated();
 
-        if (isset($validated['grades']) && is_array($validated['grades'])) {
+        if (isset($validated['grades']) && is_array($validated['grades']) && !empty($validated['grades'])) {
             $grades = $validated['grades'];
             unset($validated['grades']);
 
@@ -93,7 +95,7 @@ class ClassStandingController extends Controller implements HasMiddleware
             }
 
             $records = ClassStanding::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([
@@ -101,6 +103,9 @@ class ClassStandingController extends Controller implements HasMiddleware
                 'data' => ClassStandingResource::collection($records),
             ], 201);
         } else { 
+            if (!isset($validated['student_id'])) {
+                return response()->json(['message' => 'student_id is required'], 422);
+            }
             $record = ClassStanding::create([
                 'student_id' => $validated['student_id'],
                 'section_subject_id' => $validated['section_subject_id'],
@@ -144,7 +149,7 @@ class ClassStandingController extends Controller implements HasMiddleware
     {
         $validated = $request->validated();
         
-        if (isset($validated['grades']) && is_array($validated['grades'])) {
+        if (isset($validated['grades']) && is_array($validated['grades']) && !empty($validated['grades'])) {
             $recordIds = array_column($validated['grades'], 'class_standing_id');
             $records = ClassStanding::whereIn('id', $recordIds)->get()
                 ->keyBy('id');
@@ -155,7 +160,7 @@ class ClassStandingController extends Controller implements HasMiddleware
                         
                         if ($record = $records->get($gradeData['class_standing_id'])) {
                             $this->authorize('finalize', $record);
-                            $record->update([
+                            $updateData = [
                                 'attendance_score' => $gradeData['attendance_score'] ?? $record->attendance_score,
                                 'recitation_score' => $gradeData['recitation_score'] ?? $record->recitation_score,
                                 'quiz_score' => $gradeData['quiz_score'] ?? $record->quiz_score,
@@ -163,7 +168,13 @@ class ClassStandingController extends Controller implements HasMiddleware
                                 'major_exam_score' => isset($gradeData['major_exam_pts']) 
                                     ? $this->calculateRating($gradeData['major_exam_pts'], $gradeData['major_exam_items']) 
                                     : $record->major_exam_score,
-                            ]);
+                            ];
+                            
+                            if (isset($gradeData['status'])) {
+                                $updateData['status'] = $gradeData['status'];
+                            }
+                            
+                            $record->update($updateData);
                         }
                     }
                 });
@@ -172,7 +183,7 @@ class ClassStandingController extends Controller implements HasMiddleware
             }
 
             $records = ClassStanding::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, $records->values()->toArray()))
                 ->get();
 
             return response()->json([
@@ -188,7 +199,7 @@ class ClassStandingController extends Controller implements HasMiddleware
 
             $this->authorize('finalize', $record);
 
-            $record->update([
+            $updateData = [
                 'attendance_score' => $validated['attendance_score'] ?? $record->attendance_score,
                 'recitation_score' => $validated['recitation_score'] ?? $record->recitation_score, 
                 'quiz_score' => $validated['quiz_score'] ?? $record->quiz_score,
@@ -196,7 +207,13 @@ class ClassStandingController extends Controller implements HasMiddleware
                 'major_exam_score' => isset($validated['major_exam_pts']) 
                     ? $this->calculateRating($validated['major_exam_pts'], $validated['major_exam_items']) 
                     : $record->major_exam_score, 
-            ]);
+            ];
+            
+            if (isset($validated['status'])) {
+                $updateData['status'] = $validated['status'];
+            }
+            
+            $record->update($updateData);
 
             $record->load(['student.user', 'sectionSubject.subject']);
 

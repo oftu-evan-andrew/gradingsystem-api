@@ -22,31 +22,29 @@ class UserSeeder extends Seeder
             ]
         );
 
-        $sections = Section::all();
-        foreach ($sections as $section) {
-            for ($i = 1; $i <= 5; $i++) {
-                $email = strtolower("student{$i}.{$section->section_name}@example.com");
-                $user = User::firstOrCreate(
-                    ['email' => $email],
-                    [
-                        'first_name' => "Student{$i}",
-                        'last_name' => $section->section_name . "-{$i}",
-                        'password' => Hash::make('password123'),
-                        'role' => 'student',
-                    ]
-                );
+        $section = Section::first();
+        if ($section) {
+            $user = User::firstOrCreate(
+                ['email' => 'student@example.com'],
+                [
+                    'first_name' => 'Jane',
+                    'last_name' => 'Doe',
+                    'password' => Hash::make('password123'),
+                    'role' => 'student',
+                ]
+            );
 
-                Student::firstOrCreate(
-                    ['user_id' => $user->id],
-                    [
-                        'section_id' => $section->section_id,
-                        'is_irregular' => false,
-                    ]
-                );
-            }
+            Student::firstOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'section_id' => $section->section_id,
+                    'is_irregular' => false,
+                ]
+            );
+
+            $this->command->info('Student created/verified: student@example.com / password123');
         }
 
         $this->command->info('Admin user created/verified: admin@example.com / password123');
-        $this->command->info('Students created/verified for all sections');
     }
 }

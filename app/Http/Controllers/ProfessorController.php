@@ -9,7 +9,7 @@ class ProfessorController extends Controller
 {
     public function index(Request $request)
     {
-       $this->authorize('finalize', Professor::class);
+       $this->authorize('viewAny', Professor::class);
 
        $query = Professor::with(['user']);
 
@@ -30,7 +30,7 @@ class ProfessorController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorize('finalize', Professor::class);
+        $this->authorize('create', Professor::class);
         $validated = $request->validate([
             'user_id' => 'required|uuid|exists:users,id|unique:professors,user_id'
         ]);
@@ -41,13 +41,13 @@ class ProfessorController extends Controller
 
     public function show(Professor $professor)
     {
-        $this->authorize('finalize', $professor);
+        $this->authorize('view', $professor);
         return response()->json($professor->load('user', 'sections'));
     }
 
     public function update(Request $request, Professor $professor)
     {
-        $this->authorize('finalize', $professor);
+        $this->authorize('update', $professor);
         $validated = $request->validate([
             'user_id' => 'uuid|exists:users,id|unique:professors,user_id,' . $professor->id
         ]);
@@ -58,7 +58,7 @@ class ProfessorController extends Controller
 
     public function destroy(Professor $professor)
     {   
-        $this->authorize('finalize', $professor);
+        $this->authorize('delete', $professor);
 
         if ($professor->sections()->exists()) {
             return response()->json([

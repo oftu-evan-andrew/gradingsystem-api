@@ -9,13 +9,13 @@ use Illuminate\Support\Facades\Auth;
 class SectionController extends Controller
 {
     public function subjects(Section $section) {
-        $this->authorize('finalize', $section);
+        $this->authorize('view', $section);
 
         return response()->json($section->sectionSubjects()->with(['subject', 'professor.user'])->paginate(15));
     }
 
     public function students (Section $section) {
-        $this->authorize('finalize', $section);
+        $this->authorize('viewAny', $section);
         
         return response()->json($section->students()->with('user')->paginate(15));
     }
@@ -23,7 +23,7 @@ class SectionController extends Controller
     public function index(Request $request)
     {
        $professorId = $this->getProfessorId();
-       $this->authorize('finalize', Section::class);
+       $this->authorize('viewAny', Section::class);
 
        $query = Section::with(['course'])
             ->when($professorId, fn($q) => $q->whereHas('sectionSubjects', fn($sq) =>
@@ -48,7 +48,7 @@ class SectionController extends Controller
             $query->orderBy('created_at', $sort);
         }
 
-        return response()->json($query->paginate(15));
+        return response()->json($query->paginate($request->input('per_page', 500)));
     }
 
     public function store(Request $request)
@@ -67,13 +67,13 @@ class SectionController extends Controller
 
     public function show(Section $section)
     {
-        $this->authorize('finalize', $section);
+        $this->authorize('view', $section);
         return response()->json($section->load('course'));
     }
 
     public function update(Request $request, Section $section)
     {
-        $this->authorize('finalize', $section);
+        $this->authorize('update', $section);
         $validated = $request->validate([
             'section_name' => 'string|max:50',
             'year_level' => 'integer|between:1,4',
@@ -87,7 +87,7 @@ class SectionController extends Controller
 
     public function destroy(Section $section)
     {
-        $this->authorize('finalize', $section);
+        $this->authorize('delete', $section);
         $section->delete();
         return response()->json(null, 204);
     }

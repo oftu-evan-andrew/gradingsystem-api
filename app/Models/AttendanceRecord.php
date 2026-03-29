@@ -17,6 +17,10 @@ class AttendanceRecord extends Model
         'rating'
     ];
 
+    protected $casts = [
+        'attendance_date' => 'datetime',
+    ];
+
     protected static function booted() {
         static::saved(function ($record) {
             $gradeService = app(GradeCalculationService::class);

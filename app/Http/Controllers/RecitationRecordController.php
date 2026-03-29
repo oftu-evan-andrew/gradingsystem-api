@@ -57,11 +57,14 @@ class RecitationRecordController extends Controller implements HasMiddleware
     public function index(): RecitationRecordCollection
     {
         $user = Auth::user();
+        $request = request();
 
         // Students: view only their finalized recitation records
         if ($user->role === 'student') {
             $records = RecitationRecord::with(['sectionSubject.subject'])
-                ->where('student_id', $user->student->id)
+                ->where('student_id', $user->student->student_id)
+                ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+                ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
                 ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
                 ->paginate(15);
 
@@ -73,6 +76,8 @@ class RecitationRecordController extends Controller implements HasMiddleware
         
         $recitationRecords = RecitationRecord::with(['student.user', 'sectionSubject.subject'])
             ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+            ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+            ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
             ->paginate(15);
         
         return new RecitationRecordCollection($recitationRecords);
@@ -107,13 +112,15 @@ class RecitationRecordController extends Controller implements HasMiddleware
                 $createdRecords = [];
                 
                 foreach ($grades as $grade) {
-                    $record = RecitationRecord::create([
+                    $record = RecitationRecord::firstOrNew([
                         'student_id' => $grade['student_id'],
                         'section_subject_id' => $validated['section_subject_id'],
-                        'professor_id' => $professorId,
                         'grading_period' => $validated['grading_period'],
-                        'rating' => $grade['rating'],
                     ]);
+                    $record->professor_id = $professorId;
+                    $record->rating = $grade['rating'];
+                    $record->remarks = $grade['remarks'] ?? $validated['remarks'] ?? null;
+                    $record->save();
                     $createdRecords[] = $record;
                 }
                 
@@ -124,7 +131,7 @@ class RecitationRecordController extends Controller implements HasMiddleware
             }
             
             $records = RecitationRecord::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
             
             return response()->json([
@@ -132,12 +139,16 @@ class RecitationRecordController extends Controller implements HasMiddleware
                 'data' => RecitationRecordResource::collection($records),
             ], 201);
         } else {
+            if (!isset($validated['student_id'])) {
+                return response()->json(['message' => 'student_id is required'], 422);
+            }
             $record = RecitationRecord::create([
                 'student_id' => $validated['student_id'],
                 'section_subject_id' => $validated['section_subject_id'],
                 'professor_id' => $professorId,
                 'grading_period' => $validated['grading_period'],
                 'rating' => $validated['rating'],
+                'remarks' => $validated['remarks'] ?? null,
             ]);
 
             $record->load(['student.user', 'sectionSubject.subject']);
@@ -166,7 +177,7 @@ class RecitationRecordController extends Controller implements HasMiddleware
                 return response()->json(['message' => 'Recitation record not found'], 404);
             }
 
-            if ($record->student_id !== $user->student->id) {
+            if ($record->student_id !== $user->student->student_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
 
@@ -200,7 +211,7 @@ class RecitationRecordController extends Controller implements HasMiddleware
      * - Single: id field with rating
      * - Bulk: grades array with recitation_record_id and rating for each
      */
-    public function update(UpdateRecitationRecordRequest $request): JsonResponse
+    public function update(UpdateRecitationRecordRequest $request, int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
@@ -218,7 +229,8 @@ class RecitationRecordController extends Controller implements HasMiddleware
                 foreach ($validated['grades'] as $gradeData) { 
                     if ($record = $records->get($gradeData['recitation_record_id'])) {
                         $record->update([
-                            'rating' => $gradeData['rating']
+                            'rating' => $gradeData['rating'] ?? $record->rating,
+                            'remarks' => $validated['remarks'] ?? $record->remarks,
                         ]);
                     }
             }
@@ -228,7 +240,7 @@ class RecitationRecordController extends Controller implements HasMiddleware
             }
             
             $records = RecitationRecord::with(['student.user', 'sectionSubject.subject']) 
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
             
             return response()->json([
@@ -238,7 +250,7 @@ class RecitationRecordController extends Controller implements HasMiddleware
 
         } else {
             // Single record update
-            $record = RecitationRecord::where('id', $validated['id'])
+            $record = RecitationRecord::where('id', $id)
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
             
@@ -248,6 +260,7 @@ class RecitationRecordController extends Controller implements HasMiddleware
             
             $record->update([
                 'rating' => $validated['rating'] ?? $record->rating,
+                'remarks' => $validated['remarks'] ?? $record->remarks,
             ]);
             
             $record->load(['student.user', 'sectionSubject.subject']);

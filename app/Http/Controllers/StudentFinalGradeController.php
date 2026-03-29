@@ -54,7 +54,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
             ->when($professorId, fn($q) => $q->whereHas('sectionSubject', fn($sq) => 
                 $sq->where('professor_id', $professorId)
             ))
-            ->paginate(15);
+            ->paginate(1000);
         
         return new StudentFinalGradeCollection($finalGrades);
     }
@@ -90,7 +90,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
             }
 
             $records = StudentFinalGrade::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([
@@ -165,7 +165,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
             }
 
             $records = StudentFinalGrade::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([

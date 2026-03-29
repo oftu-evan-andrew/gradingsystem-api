@@ -19,6 +19,7 @@ class ClassStandingResource extends JsonResource
             'student_id' => $this->student_id,
             'section_subject_id' => $this->section_subject_id,
             'grading_period' => $this->grading_period,
+            'status' => $this->status,
             'attendance_score' => $this->attendance_score !== null ? (float) $this->attendance_score : null,
             'recitation_score' => $this->recitation_score !== null ? (float) $this->recitation_score : null,
             'quiz_score' => $this->quiz_score !== null ? (float) $this->quiz_score : null,

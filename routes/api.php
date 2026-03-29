@@ -18,6 +18,7 @@ use App\Http\Controllers\PeriodicGradeController;
 use App\Http\Controllers\StudentFinalGradeController;
 use App\Http\Controllers\StudentGpaController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\StudentPortalController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -40,13 +41,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('section-subjects', SectionSubjectController::class);
     
     // Finalize student performance
+    // Bulk finalize routes FIRST (more specific - must be before parameterized routes)
+    Route::post('class-standings/bulk/finalize', [ClassStandingController::class, 'finalizeBulk']);
+    Route::post('student-final-grades/bulk/approve', [StudentFinalGradeController::class, 'approveBulk']);
+
+    // Then parameterized routes
     Route::post('class-standings/{id}/finalize', [ClassStandingController::class, 'finalize']);
     Route::post('periodic-grades/{id}/finalize', [PeriodicGradeController::class, 'finalize']);
     Route::post('student-final-grades/{id}/finalize', [StudentFinalGradeController::class, 'finalize']);
-
-    // Bulk finalize (admin-only middleware check in controller)
-    Route::post('class-standings/bulk/finalize', [ClassStandingController::class, 'finalizeBulk']);
-    Route::post('student-final-grades/bulk/approve', [StudentFinalGradeController::class, 'approveBulk']);
 
     // Grading Records
     Route::middleware(['can:access-professor-content'])->group(function () {
@@ -59,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Computations and Aggregations
     Route::apiResource('class-standings', ClassStandingController::class);
+    Route::put('class-standings', [ClassStandingController::class, 'update']);
     Route::apiResource('periodic-grades', PeriodicGradeController::class);
     Route::apiResource('student-final-grades', StudentFinalGradeController::class);
     
@@ -66,4 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('student-gpas/{studentGpa}', [StudentGpaController::class, 'show']);
     Route::delete('student-gpas/{studentGpa}', [StudentGpaController::class, 'destroy']);
     Route::post('student-gpas/calculate', [StudentGpaController::class, 'calculate']);
+    
+    // Student Portal Feature
+    Route::get('/my-grades', [StudentPortalController::class, 'getMyGrades']);
 });
