@@ -1,27 +1,26 @@
-FROM php:8.2-cli
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git curl zip unzip libpq-dev libonig-dev libzip-dev \
-    && docker-php-ext-install pdo pdo_mysql mbstring zip bcmath
-
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Set working directory
-WORKDIR /var/www
-
-# Copy project files
-COPY . .
-
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
-
-# Cache Laravel config and routes
-RUN php artisan config:cache && php artisan route:cache
-
-# Expose port
-EXPOSE 8080
-
-# Start Laravel server
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]
+services:
+  - type: web
+    name: grading-api
+    runtime: docker
+    branch: master
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_KEY
+        generateValue: true
+      - key: APP_DEBUG
+        value: false
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        value: gondola.proxy.rlwy.net
+      - key: DB_PORT
+        value: "13069"
+      - key: DB_DATABASE
+        value: railway
+      - key: DB_USERNAME
+        value: root
+      - key: DB_PASSWORD
+        value: IzQcyKndQhEtgRqcWQdGHPmgyDqPamZH
