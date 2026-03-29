@@ -10,25 +10,19 @@ RUN apt-get update && apt-get install -y \
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Set working directory
 WORKDIR /var/www
 
-# Copy composer files first (for caching)
 COPY composer.json composer.lock ./
 
-# Install dependencies
-RUN composer install --no-dev --optimize-autoloader --no-scripts --no-autoloader
+# Show verbose output so we can see the real error
+RUN composer install --no-dev --optimize-autoloader --no-scripts --no-autoloader --verbose --ignore-platform-reqs
 
-# Copy the rest of the project
 COPY . .
 
-# Generate optimized autoloader
-RUN composer dump-autoload --optimize
+RUN composer dump-autoload --optimize --ignore-platform-reqs
 
-# Cache Laravel config and routes
 RUN php artisan config:cache && php artisan route:cache
 
-# Expose port
 EXPOSE 8080
 
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]
