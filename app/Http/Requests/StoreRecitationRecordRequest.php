@@ -27,11 +27,13 @@ class StoreRecitationRecordRequest extends FormRequest
             'professor_id' => 'sometimes|required|uuid|exists:professors,professor_id',
             'student_id'=> 'required_without:grades|sometimes|required|uuid|exists:students,student_id',
             'rating'=> 'required_without:grades|sometimes|required|numeric|between:0,100',
+            'remarks' => 'nullable|string|max:500',
             'section_subject_id' => 'required|uuid|exists:section_subjects,id',
             'grading_period' => 'required|integer|between:1,3',
             'grades' => 'sometimes|required|array|min:1',
             'grades.*.student_id' => 'required_with:grades|uuid|exists:students,student_id',
             'grades.*.rating' => 'required_with:grades|numeric|between:0,100',
+            'grades.*.remarks' => 'nullable|string|max:500',
         ];
     }
 }

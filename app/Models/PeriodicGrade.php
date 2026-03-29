@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\GradeCalculationService;
 use Illuminate\Database\Eloquent\Model;
 
 class PeriodicGrade extends Model
@@ -37,5 +38,32 @@ class PeriodicGrade extends Model
     public function lastModifiedBy()
     {
         return $this->belongsTo(Professor::class, 'last_modified_by');
+    }
+
+    protected static function booted() {
+        static::saved(function ($periodicGrade) {
+            // Recalculate StudentFinalGrade when periodic grade changes
+            $classStanding = $periodicGrade->classStanding;
+            $sectionSubject = $classStanding->sectionSubject; 
+            $student = $periodicGrade->student;
+
+            $finalGradeValue = app(GradeCalculationService::class) 
+                ->calculateFinalGrade($student, $sectionSubject);
+
+            if ($finalGradeValue !== null) {
+                $finalGrade = StudentFinalGrade::firstOrNew([
+                    'student_id' => $student->id,
+                    'section_subject_id' => $sectionSubject->id
+                ]);
+
+                $finalGrade->final_grade = $finalGradeValue;
+
+                if ($periodicGrade->status === 'submitted') {
+                    $finalGrade->status = 'submitted';
+                }
+
+                $finalGrade->save();
+            }
+        });
     }
 }

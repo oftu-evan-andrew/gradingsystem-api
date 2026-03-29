@@ -49,10 +49,26 @@ class QuizRecordController extends Controller implements HasMiddleware
 
     public function index(): QuizRecordCollection
     {
+        $user = Auth::user();
+        $request = request();
+
+        if ($user->role === 'student') {
+            $records = QuizRecord::with(['sectionSubject.subject'])
+                ->where('student_id', $user->student->student_id)
+                ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+                ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
+                ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
+                ->paginate(15);
+
+            return new QuizRecordCollection($records);
+        }
+
         $professorId = $this->getProfessorId();
         
         $quizRecords = QuizRecord::with(['student.user', 'sectionSubject.subject'])
             ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+            ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+            ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
             ->paginate(15);
         
         return new QuizRecordCollection($quizRecords);
@@ -88,15 +104,17 @@ class QuizRecordController extends Controller implements HasMiddleware
                 $records = DB::transaction(function () use ($validated, $grades, $professorId) {
                 $createdRecords = [];
                 foreach ($grades as $grade) {
-                    $createdRecords[] = QuizRecord::create([
+                    $record = QuizRecord::firstOrNew([
                         'student_id' => $grade['student_id'],
                         'section_subject_id' => $validated['section_subject_id'],
-                        'professor_id' => $professorId,
                         'grading_period' => $validated['grading_period'],
                         'quiz_number' => $validated['quiz_number'],
-                        'quiz_title' => $validated['quiz_title'] ?? null,
-                        'rating' => $grade['rating'],
                     ]);
+                    $record->professor_id = $professorId;
+                    $record->quiz_title = $validated['quiz_title'] ?? null;
+                    $record->rating = $this->calculateRating($grade['pts'] ?? null, $grade['items'] ?? null);
+                    $record->save();
+                    $createdRecords[] = $record;
                 }
                 return $createdRecords;
             });
@@ -106,7 +124,7 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
 
             $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
 
             return response()->json([
@@ -115,6 +133,9 @@ class QuizRecordController extends Controller implements HasMiddleware
             ], 201);
         } else {
             // Single record creation
+            if (!isset($validated['student_id'])) {
+                return response()->json(['message' => 'student_id is required'], 422);
+            }
             $record = QuizRecord::create([
                 'student_id' => $validated['student_id'],
                 'section_subject_id' => $validated['section_subject_id'],
@@ -122,7 +143,7 @@ class QuizRecordController extends Controller implements HasMiddleware
                 'grading_period' => $validated['grading_period'],
                 'quiz_number' => $validated['quiz_number'],
                 'quiz_title' => $validated['quiz_title'] ?? null,
-                'rating' => $validated['rating'],
+                'rating' => $this->calculateRating($validated['pts'] ?? null, $validated['items'] ?? null),
             ]);
 
             $record->load(['student.user', 'sectionSubject.subject']);
@@ -136,10 +157,33 @@ class QuizRecordController extends Controller implements HasMiddleware
 
     /**
      * Get a single quiz record by ID.
+     * Students can only view their own records when class standing is finalized.
      * Professors can only see their own records; admins can see all.
      */
     public function show(int $id): JsonResponse
     {
+        $user = Auth::user();
+
+        // Students: can only view their own finalized records
+        if ($user->role === 'student') {
+            $record = QuizRecord::with(['student.user', 'sectionSubject.subject'])->find($id);
+
+            if (!$record) {
+                return response()->json(['message' => 'Quiz record not found'], 404);
+            }
+
+            if ($record->student_id !== $user->student->student_id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            if ($record->classStanding->status !== 'finalized') {
+                return response()->json(['message' => 'Not yet available'], 403);
+            }
+
+            return (new QuizRecordResource($record))->response();
+        }
+
+        // Professors/Admins: existing scoping logic
         $professorId = $this->getProfessorId();
         
         $query = QuizRecord::with(['student.user', 'sectionSubject.subject']);
@@ -163,7 +207,7 @@ class QuizRecordController extends Controller implements HasMiddleware
      * - Single: id field with rating/quiz_title
      * - Bulk: grades array with quiz_record_id and rating for each
      */
-    public function update(UpdateQuizRecordRequest $request): JsonResponse
+    public function update(UpdateQuizRecordRequest $request, int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
@@ -181,7 +225,7 @@ class QuizRecordController extends Controller implements HasMiddleware
                 foreach ($validated['grades'] as $gradeData) { 
                     if ($record = $records->get($gradeData['quiz_record_id'])) {
                         $record->update([
-                            'rating' => $gradeData['rating'],
+                            'rating' => $this->calculateRating($gradeData['pts'] ?? null, $gradeData['items'] ?? null),
                             'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title
                         ]);
                     }
@@ -192,7 +236,7 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
 
             $records = QuizRecord::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
             
             return response()->json([
@@ -202,7 +246,7 @@ class QuizRecordController extends Controller implements HasMiddleware
 
         } else {
             // Single record update
-            $record = QuizRecord::where('id', $validated['id'])
+            $record = QuizRecord::where('id', $id)
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
             
@@ -211,8 +255,9 @@ class QuizRecordController extends Controller implements HasMiddleware
             }
             
             $record->update([
-                'rating' => $validated['rating'] ?? $record->rating,
+                'quiz_number' => $validated['quiz_number'] ?? $record->quiz_number,
                 'quiz_title' => $validated['quiz_title'] ?? $record->quiz_title,
+                'rating' => $this->calculateRating($validated['pts'] ?? null, $validated['items'] ?? null),
             ]);
             
             $record->load(['student.user', 'sectionSubject.subject']);
@@ -247,5 +292,12 @@ class QuizRecordController extends Controller implements HasMiddleware
         $quizRecord->delete();
         
         return response()->json(null, 204);
+    }
+
+    private function calculateRating(?float $pts, ?float $items): ?float {
+        if ($pts === null || $items === null || $items === 0) {
+            return null;
+        }
+        return round(($pts / $items) * 50 + 50, 2);
     }
 }

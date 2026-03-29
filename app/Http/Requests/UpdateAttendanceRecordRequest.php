@@ -25,6 +25,7 @@ class UpdateAttendanceRecordRequest extends FormRequest
         return [
             'type' => 'required|in:attendance',
             'id' => 'required_without:grades|sometimes|required|uuid|exists:attendance_records,id',
+            'attendance_date' => 'nullable|date',
             'status' => 'required_without:grades|sometimes|required|in:present,late,absent',
             'rating' => 'required_without:grades|sometimes|required|numeric|between:0,100',
             'grades' => 'sometimes|required|array|min:1',

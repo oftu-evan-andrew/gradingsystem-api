@@ -25,7 +25,10 @@ class UpdateProjectRecordRequest extends FormRequest
         return [
             'type' => 'required|in:project',
             'id' => 'required_without:grades|sometimes|required|exists:project_records,id',
+            'project_number' => 'nullable|integer|min:1',
             'project_title' => 'nullable|string|max:150',
+            'pts' => 'nullable|numeric|min:0',
+            'items' => 'nullable|numeric|min:1',
             'rating' => 'required_without:grades|sometimes|numeric|between:0,100',
             'grades' => 'sometimes|required|array|min:1',
             'grades.*.project_record_id' => 'required_with:grades|exists:project_records,id',

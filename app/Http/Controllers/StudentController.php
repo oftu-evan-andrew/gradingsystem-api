@@ -2,34 +2,65 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Student;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class StudentController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(\App\Models\Student::with(['user', 'section'])->get());
+       $this->authorize('viewAny', Student::class);
+       $professorId = $this->getProfessorId();
+
+       $query = Student::with(['user', 'section'])
+                ->when($professorId, fn($q) => $q->whereHas('section', fn($sq) =>
+                    $sq->whereHas('sectionSubjects', fn($ssq) => 
+                        $ssq->where('professor_id', $professorId)
+                )
+            ));
+
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->whereHas('user', function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->has('section_id')) { 
+            $query->where('section_id', $request->section_id);
+        }
+
+        if ($request->has('sort_by')) {
+            $sort = $request->sort_by === 'desc' ? 'desc' : 'asc';
+            $query->orderBy('created_at', $sort);
+        }
+        return response()->json($query->paginate($request->input('per_page', 15)));
     }
 
     public function store(Request $request)
     {
+        $this->authorize('create', Student::class);
         $validated = $request->validate([
             'user_id' => 'required|uuid|exists:users,id|unique:students,user_id',
             'section_id' => 'required|uuid|exists:sections,section_id',
             'is_irregular' => 'boolean'
         ]);
         
-        $student = \App\Models\Student::create($validated);
+        $student = Student::create($validated);
         return response()->json($student, 201);
     }
 
-    public function show(\App\Models\Student $student)
+    public function show(Student $student)
     {
+        $this->authorize('view', $student);
         return response()->json($student->load(['user', 'section']));
     }
 
-    public function update(Request $request, \App\Models\Student $student)
+    public function update(Request $request, Student $student)
     {
+        $this->authorize('update', $student);
         $validated = $request->validate([
             'section_id' => 'uuid|exists:sections,section_id',
             'is_irregular' => 'boolean'
@@ -39,9 +70,21 @@ class StudentController extends Controller
         return response()->json($student);
     }
 
-    public function destroy(\App\Models\Student $student)
+    public function destroy(Student $student)
     {
+        $this->authorize('delete', $student);
         $student->delete();
         return response()->json(null, 204);
+    }
+
+    private function getProfessorId(): ?string
+    {
+        $user = Auth::user();
+        
+        if ($user->role === 'admin') {
+            return null;
+        }
+        
+        return $user->professor->professor_id ?? null;
     }
 }

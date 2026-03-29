@@ -14,7 +14,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Routing\Controllers\HasMiddleware;
 
 
-class AttendanceRecordController extends Controller
+class AttendanceRecordController extends Controller implements HasMiddleware
 {
     /**
      * Authorization middleware - Apply middleware to restrict access.
@@ -50,14 +50,33 @@ class AttendanceRecordController extends Controller
 
     /**
      * Get all attendance records with pagination.
+     * Students see only their own finalized records.
      * Professors see only their own records; admins see all.
      */
     public function index(): AttendanceRecordCollection
     {
+        $user = Auth::user();
+        $request = request();
+
+        // Students: view only their finalized attendance records
+        if ($user->role === 'student') {
+            $records = AttendanceRecord::with(['sectionSubject.subject'])
+                ->where('student_id', $user->student->student_id)
+                ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+                ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
+                ->wherehas('classStanding', fn($cs) => $cs->where('status', 'finalized'))
+                ->paginate(15);
+
+            return new AttendanceRecordCollection($records);
+        }
+
+        // Professors/Admins: existing scoping logic
         $professorId = $this->getProfessorId();
         
         $attendanceRecords = AttendanceRecord::with(['student.user', 'sectionSubject.subject'])
             ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
+            ->when($request->section_subject_id, fn($q) => $q->where('section_subject_id', $request->section_subject_id))
+            ->when($request->grading_period, fn($q) => $q->where('grading_period', $request->grading_period))
             ->paginate(15);
         
         return new AttendanceRecordCollection($attendanceRecords);
@@ -92,15 +111,16 @@ class AttendanceRecordController extends Controller
                 $createdRecords = [];
                 
                 foreach ($grades as $grade) {
-                    $record = AttendanceRecord::create([
+                    $record = AttendanceRecord::firstOrNew([
                         'student_id' => $grade['student_id'],
                         'section_subject_id' => $validated['section_subject_id'],
-                        'professor_id' => $professorId,
                         'grading_period' => $validated['grading_period'],
                         'attendance_date' => $validated['attendance_date'],
-                        'status' => $grade['status'] ?? $validated['status'],
-                        'rating' => $grade['rating'],
                     ]);
+                    $record->professor_id = $professorId;
+                    $record->status = $grade['status'] ?? $validated['status'];
+                    $record->rating = $grade['rating'];
+                    $record->save();
                     $createdRecords[] = $record;
                 }
                 
@@ -111,7 +131,7 @@ class AttendanceRecordController extends Controller
             }
             
             $records = AttendanceRecord::with(['student.user', 'sectionSubject.subject'])
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
             
             return response()->json([
@@ -119,15 +139,19 @@ class AttendanceRecordController extends Controller
                 'data' => AttendanceRecordResource::collection($records),
             ], 201);
         } else {
-            $record = AttendanceRecord::create([
+            if (!isset($validated['student_id'])) {
+                return response()->json(['message' => 'student_id is required'], 422);
+            }
+            $record = AttendanceRecord::firstOrNew([
                 'student_id' => $validated['student_id'],
                 'section_subject_id' => $validated['section_subject_id'],
-                'professor_id' => $professorId,
-                'grading_period' => $validated['grading_period'],
                 'attendance_date' => $validated['attendance_date'],
-                'status' => $validated['status'],
-                'rating' => $validated['rating'],
             ]);
+            $record->professor_id = $professorId;
+            $record->grading_period = $validated['grading_period'];
+            $record->status = $validated['status'] ?? 'present';
+            $record->rating = $validated['rating'];
+            $record->save();
 
             $record->load(['student.user', 'sectionSubject.subject']);
 
@@ -140,10 +164,32 @@ class AttendanceRecordController extends Controller
 
     /**
      * Get a single attendance record by ID.
+     * Students can only view their own records when class standing is finalized.
      * Professors can only see their own records; admins can see all.
      */
     public function show(int $id): JsonResponse
     {
+        $user = Auth::user();
+
+        // Students: can only view their own finalized records
+        if ($user->role === 'student') {
+            $record = AttendanceRecord::with(['student.user', 'sectionSubject.subject'])->find($id);
+
+            if (!$record) {
+                return response()->json(['message' => 'Attendance record not found'], 404);
+            }
+
+            if ($record->student_id !== $user->student->student_id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            if ($record->classStanding->status !== 'finalized') {
+                return response()->json(['message' => 'Not yet available'], 403);
+            }
+
+            return (new AttendanceRecordResource($record))->response();
+        }
+
         $professorId = $this->getProfessorId();
         
         $query = AttendanceRecord::with(['student.user', 'sectionSubject.subject']);
@@ -167,7 +213,7 @@ class AttendanceRecordController extends Controller
      * - Single: id field with rating/status
      * - Bulk: grades array with attendance_record_id, rating, and status for each
      */
-    public function update(UpdateAttendanceRecordRequest $request): JsonResponse
+    public function update(UpdateAttendanceRecordRequest $request, int $id): JsonResponse
     {
         $professorId = $this->getProfessorId();
         $validated = $request->validated();
@@ -185,7 +231,8 @@ class AttendanceRecordController extends Controller
                 foreach ($validated['grades'] as $gradeData) { 
                     if ($record = $records->get($gradeData['attendance_record_id'])) {
                         $record->update([
-                            'rating' => $gradeData['rating'],
+                            'attendance_date' => $validated['attendance_date'] ?? $record->attendance_date,
+                            'rating' => $gradeData['rating'] ?? $record->rating,
                             'status' => $gradeData['status'] ?? $record->status,
                         ]);
                     }
@@ -196,7 +243,7 @@ class AttendanceRecordController extends Controller
             }
 
             $records = AttendanceRecord::with(['student.user', 'sectionSubject.subject']) 
-                ->whereIn('id', array_map(fn($r) => $r->id, $records))
+                ->whereIn('id', array_map(fn($r) => is_array($r) ? $r['id'] : $r->id, is_array($records) ? $records : $records->toArray()))
                 ->get();
             
             return response()->json([
@@ -206,7 +253,7 @@ class AttendanceRecordController extends Controller
                 
         } else {
             // Single record update
-            $record = AttendanceRecord::where('id', $validated['id'])
+            $record = AttendanceRecord::where('id', $id)
                 ->when($professorId, fn($q) => $q->where('professor_id', $professorId))
                 ->first();
             
@@ -215,6 +262,7 @@ class AttendanceRecordController extends Controller
             }
             
             $record->update([
+                'attendance_date' => $validated['attendance_date'] ?? $record->attendance_date,
                 'rating' => $validated['rating'] ?? $record->rating,
                 'status' => $validated['status'] ?? $record->status,
             ]);

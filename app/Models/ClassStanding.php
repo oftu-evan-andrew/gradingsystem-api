@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\GradeCalculationService;
 use Illuminate\Database\Eloquent\Model;
 
 class ClassStanding extends Model
@@ -16,8 +17,11 @@ class ClassStanding extends Model
         'recitation_score',
         'quiz_score',
         'project_score',
-        'major_exam_score'
+        'major_exam_score',
+        'status'
     ];
+
+    protected $casts = ['status' => 'string'];
 
     public function student()
     {
@@ -32,5 +36,26 @@ class ClassStanding extends Model
     public function periodicGrades()
     {
         return $this->hasMany(PeriodicGrade::class, 'class_standing_id');
+    }
+
+    protected static function booted() {
+        static::saved(function ($classStanding) { 
+            // Calculate PeriodicGrade when score change
+            $periodicGrade = PeriodicGrade::firstOrNew([
+                'student_id' => $classStanding->student_id,
+                'class_standing_id' => $classStanding->id,
+                'grading_period' => $classStanding->grading_period
+            ]);
+
+                
+            $periodicGrade->periodic_grade = app(GradeCalculationService::class) 
+                ->calculatePeriodicGrade($classStanding);
+
+            if ($classStanding->status === 'submitted') {
+                $periodicGrade->status = 'submitted';
+            }
+
+            $periodicGrade->save();
+        });
     }
 }
