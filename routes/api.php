@@ -20,6 +20,10 @@ use App\Http\Controllers\StudentGpaController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\StudentPortalController;
 
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok']);
+});
+
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
