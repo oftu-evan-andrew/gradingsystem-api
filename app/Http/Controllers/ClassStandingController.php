@@ -206,12 +206,23 @@ class ClassStandingController extends Controller implements HasMiddleware
                         
                         if ($record) {
                             $this->authorize('finalize', $record);
+                            
+                            // Calculate major_exam_score from pts/items if provided
+                            $majorExamScore = $record->major_exam_score;
+                            if (isset($gradeData['major_exam_pts']) || isset($gradeData['major_exam_items'])) {
+                                $pts = isset($gradeData['major_exam_pts']) ? (float) $gradeData['major_exam_pts'] : null;
+                                $items = isset($gradeData['major_exam_items']) ? (float) $gradeData['major_exam_items'] : null;
+                                $majorExamScore = $this->calculateRating($pts, $items);
+                            } elseif (isset($gradeData['major_exam_score'])) {
+                                $majorExamScore = $gradeData['major_exam_score'];
+                            }
+                            
                             $updateData = [
                                 'attendance_score' => $gradeData['attendance_score'] ?? $record->attendance_score,
                                 'recitation_score' => $gradeData['recitation_score'] ?? $record->recitation_score,
                                 'quiz_score' => $gradeData['quiz_score'] ?? $record->quiz_score,
                                 'project_score' => $gradeData['project_score'] ?? $record->project_score,
-                                'major_exam_score' => $gradeData['major_exam_score'] ?? $record->major_exam_score,
+                                'major_exam_score' => $majorExamScore,
                             ];
                             
                             if (isset($gradeData['status'])) {
