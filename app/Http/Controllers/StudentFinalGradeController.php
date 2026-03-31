@@ -502,7 +502,7 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
         if ($finalGrade && $finalGrade->sectionSubject) {
             StudentGpa::updateOrCreate(
                 [
-                    'student_id' => $student->id,
+                    'student_id' => $student->student_id,
                     'school_year' => $finalGrade->sectionSubject->section->school_year ?? null,
                     'semester' => $finalGrade->sectionSubject->semester ?? null,
                 ],
