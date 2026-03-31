@@ -150,24 +150,68 @@ class ClassStandingController extends Controller implements HasMiddleware
         $validated = $request->validated();
         
         if (isset($validated['grades']) && is_array($validated['grades']) && !empty($validated['grades'])) {
-            $recordIds = array_column($validated['grades'], 'class_standing_id');
-            $records = ClassStanding::whereIn('id', $recordIds)->get()
+            // First, ensure all ClassStanding records exist
+            $gradesToCreate = [];
+            $existingIds = [];
+            
+            foreach ($validated['grades'] as $gradeData) {
+                if (empty($gradeData['class_standing_id'])) {
+                    // Need to create a new ClassStanding record
+                    $gradesToCreate[] = [
+                        'student_id' => $gradeData['student_id'],
+                        'section_subject_id' => $validated['section_subject_id'],
+                        'grading_period' => $validated['grading_period'],
+                    ];
+                } else {
+                    $existingIds[] = $gradeData['class_standing_id'];
+                }
+            }
+            
+            // Create missing ClassStanding records
+            $createdRecords = [];
+            if (!empty($gradesToCreate)) {
+                foreach ($gradesToCreate as $gradeToCreate) {
+                    $existingCs = ClassStanding::where('student_id', $gradeToCreate['student_id'])
+                        ->where('section_subject_id', $gradeToCreate['section_subject_id'])
+                        ->where('grading_period', $gradeToCreate['grading_period'])
+                        ->first();
+                    
+                    if (!$existingCs) {
+                        $createdRecords[] = ClassStanding::create($gradeToCreate);
+                    } else {
+                        $existingIds[] = $existingCs->id;
+                    }
+                }
+            }
+            
+            // Now fetch all records (existing + newly created)
+            $records = ClassStanding::whereIn('id', $existingIds)->get()
                 ->keyBy('id');
 
             try {
                 DB::transaction(function() use ($validated, $records) {
                     foreach ($validated['grades'] as $gradeData) {
+                        $record = null;
                         
-                        if ($record = $records->get($gradeData['class_standing_id'])) {
+                        if (!empty($gradeData['class_standing_id'])) {
+                            // Update existing record
+                            $record = $records->get($gradeData['class_standing_id']);
+                        } elseif (!empty($gradeData['student_id'])) {
+                            // Find the newly created record
+                            $record = ClassStanding::where('student_id', $gradeData['student_id'])
+                                ->where('section_subject_id', $validated['section_subject_id'])
+                                ->where('grading_period', $validated['grading_period'])
+                                ->first();
+                        }
+                        
+                        if ($record) {
                             $this->authorize('finalize', $record);
                             $updateData = [
                                 'attendance_score' => $gradeData['attendance_score'] ?? $record->attendance_score,
                                 'recitation_score' => $gradeData['recitation_score'] ?? $record->recitation_score,
                                 'quiz_score' => $gradeData['quiz_score'] ?? $record->quiz_score,
                                 'project_score' => $gradeData['project_score'] ?? $record->project_score,
-                                'major_exam_score' => isset($gradeData['major_exam_pts']) 
-                                    ? $this->calculateRating($gradeData['major_exam_pts'], $gradeData['major_exam_items']) 
-                                    : $record->major_exam_score,
+                                'major_exam_score' => $gradeData['major_exam_score'] ?? $record->major_exam_score,
                             ];
                             
                             if (isset($gradeData['status'])) {
