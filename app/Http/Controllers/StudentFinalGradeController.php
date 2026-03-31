@@ -282,7 +282,9 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
 
         foreach ($students as $student) {
             $periodicGrades = PeriodicGrade::where('student_id', $student->student_id)
-                ->where('section_subject_id', $validated['section_subject_id'])
+                ->whereHas('classStanding', function ($query) use ($validated) {
+                    $query->where('section_subject_id', $validated['section_subject_id']);
+                })
                 ->where('status', 'finalized')
                 ->orderBy('grading_period')
                 ->get();
