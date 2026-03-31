@@ -404,6 +404,53 @@ class ClassStandingController extends Controller implements HasMiddleware
     }
 
     /**
+     * Bulk reject class standings for a section_subject.
+     * Admin-only endpoint. Rejects (sets to draft) all submitted class standings
+     * for the section, allowing professors to edit and resubmit.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function rejectBulk(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'section_subject_id' => 'required|uuid|exists:section_subjects,id',
+            'grading_period' => 'required|integer|min:1|max:3',
+        ]);
+
+        if ($request->user()->role !== 'admin') {
+            return response()->json(['message' => 'Forbidden - Admin access required'], 403);
+        }
+
+        $sectionSubject = SectionSubject::with(['section', 'subject'])
+            ->find($validated['section_subject_id']);
+
+        $classStandings = ClassStanding::where('section_subject_id', $validated['section_subject_id'])
+            ->where('grading_period', $validated['grading_period'])
+            ->where('status', 'submitted')
+            ->get();
+
+        if ($classStandings->isEmpty()) {
+            return response()->json(['message' => 'No submitted class standings found to reject'], 404);
+        }
+
+        $rejectedCount = 0;
+        foreach ($classStandings as $cs) {
+            $cs->status = 'draft';
+            $cs->save();
+            $rejectedCount++;
+        }
+
+        return response()->json([
+            'message' => "Rejected {$rejectedCount} class standings for Section {$sectionSubject->section->section_name} - {$sectionSubject->subject->subject_name}, {$this->getGradingPeriodName($validated['grading_period'])}",
+            'rejected_count' => $rejectedCount,
+            'section_subject_id' => $validated['section_subject_id'],
+            'grading_period' => $validated['grading_period'],
+            'grading_period_name' => $this->getGradingPeriodName($validated['grading_period']),
+        ]);
+    }
+
+    /**
      * Helper method to convert grading period number to name.
      *
      * @param int $period
