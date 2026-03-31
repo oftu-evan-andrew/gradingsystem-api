@@ -48,6 +48,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Bulk finalize routes FIRST (more specific - must be before parameterized routes)
     Route::post('class-standings/bulk/finalize', [ClassStandingController::class, 'finalizeBulk']);
     Route::post('class-standings/bulk/reject', [ClassStandingController::class, 'rejectBulk']);
+    Route::post('class-standings/bulk/unsubmit', [ClassStandingController::class, 'unsubmitBulk']);
     Route::post('student-final-grades/bulk/approve', [StudentFinalGradeController::class, 'approveBulk']);
     Route::post('student-final-grades/bulk/submit', [StudentFinalGradeController::class, 'submitBulk']);
 

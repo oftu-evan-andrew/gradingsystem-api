@@ -451,6 +451,66 @@ class ClassStandingController extends Controller implements HasMiddleware
     }
 
     /**
+     * Professor-only endpoint to unsubmit (revert to draft) their own submitted grades.
+     * Only reverts grades that are 'submitted' - cannot revert 'finalized' grades.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function unsubmitBulk(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'section_subject_id' => 'required|uuid|exists:section_subjects,id',
+            'grading_period' => 'required|integer|min:1|max:3',
+        ]);
+
+        // Only professors can unsubmit their own grades
+        if ($request->user()->role !== 'professor') {
+            return response()->json(['message' => 'Forbidden - Professor access required'], 403);
+        }
+
+        $professor = $request->user()->professor;
+        if (!$professor) {
+            return response()->json(['message' => 'Professor profile not found'], 404);
+        }
+
+        // Verify professor teaches this section subject
+        $sectionSubject = SectionSubject::with(['section', 'subject'])
+            ->where('id', $validated['section_subject_id'])
+            ->where('professor_id', $professor->professor_id)
+            ->first();
+
+        if (!$sectionSubject) {
+            return response()->json(['message' => 'You do not teach this subject'], 403);
+        }
+
+        // Get only submitted grades (not finalized)
+        $classStandings = ClassStanding::where('section_subject_id', $validated['section_subject_id'])
+            ->where('grading_period', $validated['grading_period'])
+            ->where('status', 'submitted')
+            ->get();
+
+        if ($classStandings->isEmpty()) {
+            return response()->json(['message' => 'No submitted class standings found to unsubmit'], 404);
+        }
+
+        $unsubscribedCount = 0;
+        foreach ($classStandings as $cs) {
+            $cs->status = 'draft';
+            $cs->save();
+            $unsubscribedCount++;
+        }
+
+        return response()->json([
+            'message' => "Unsubmitted {$unsubscribedCount} class standings for Section {$sectionSubject->section->section_name} - {$sectionSubject->subject->subject_name}, {$this->getGradingPeriodName($validated['grading_period'])}",
+            'unsubscribed_count' => $unsubscribedCount,
+            'section_subject_id' => $validated['section_subject_id'],
+            'grading_period' => $validated['grading_period'],
+            'grading_period_name' => $this->getGradingPeriodName($validated['grading_period']),
+        ]);
+    }
+
+    /**
      * Helper method to convert grading period number to name.
      *
      * @param int $period
