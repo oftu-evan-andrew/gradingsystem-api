@@ -337,7 +337,7 @@ class ClassStandingController extends Controller implements HasMiddleware
         $periodicGradesCount = PeriodicGrade::whereIn('class_standing_id', $classStandings->pluck('id'))->count();
 
         return response()->json([
-            'message' => "Finalized {$classStandingsCount} class standings and {$periodicGradesCount} periodic grades for Section {$sectionSubject->section->name} - {$sectionSubject->subject->name}, " . $this->getGradingPeriodName($validated['grading_period']),
+            'message' => "Finalized {$classStandingsCount} class standings and {$periodicGradesCount} periodic grades for Section {$sectionSubject->section->section_name} - {$sectionSubject->subject->subject_name}, " . $this->getGradingPeriodName($validated['grading_period']),
             'data' => [
                 'class_standings_finalized' => $classStandingsCount,
                 'periodic_grades_finalized' => $periodicGradesCount,
