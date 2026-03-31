@@ -50,7 +50,7 @@ class StudentFinalGrade extends Model
 
                 $sectionSubject = $finalGrade->sectionSubject; 
                 $gpa = StudentGpa::firstOrNew([
-                    'student_id' => $student->id,
+                    'student_id' => $student->student_id,
                     'school_year' => $sectionSubject->section->school_year ?? null, 
                     'semester' => $sectionSubject->semester ?? null,
                 ]);
