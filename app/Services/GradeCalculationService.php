@@ -80,7 +80,7 @@ class GradeCalculationService {
     }
 
     public function calculateFinalGrade(Student $student, SectionSubject $sectionSubject): ?float { 
-        $periodicGrades = PeriodicGrade::where('student_id', $student->id) 
+        $periodicGrades = PeriodicGrade::where('student_id', $student->student_id) 
             ->whereHas('classStanding', function ($query) use ($sectionSubject) { 
                 $query->where('section_subject_id', $sectionSubject->id);
             })
@@ -94,7 +94,7 @@ class GradeCalculationService {
     }
 
     public function calculateCumulativeGpa(Student $student): ?float { 
-        $finalGrades = StudentFinalGrade::where('student_id', $student->id) 
+        $finalGrades = StudentFinalGrade::where('student_id', $student->student_id) 
             ->where('status', 'finalized')
             ->with('sectionSubject.subject')
             ->get();
