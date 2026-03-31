@@ -237,6 +237,96 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
     }
 
     /**
+     * Bulk submit final grades for a section_subject.
+     * Professor-only endpoint. Calculates final grade from the average of
+     * all 3 finalized periodic grades, then submits to admin for approval.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function submitBulk(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'section_subject_id' => 'required|uuid|exists:section_subjects,id',
+        ]);
+
+        // Only professors can submit final grades
+        if ($request->user()->role !== 'professor') {
+            return response()->json(['message' => 'Forbidden - Professor access required'], 403);
+        }
+
+        $professor = $request->user()->professor;
+        if (!$professor) {
+            return response()->json(['message' => 'Professor profile not found'], 404);
+        }
+
+        // Verify professor teaches this section subject
+        $sectionSubject = \App\Models\SectionSubject::where('id', $validated['section_subject_id'])
+            ->where('professor_id', $professor->professor_id)
+            ->first();
+
+        if (!$sectionSubject) {
+            return response()->json(['message' => 'You do not teach this subject'], 403);
+        }
+
+        // Get all students in this section
+        $section = $sectionSubject->section;
+        $students = Student::where('section_id', $section->section_id)->get();
+
+        if ($students->isEmpty()) {
+            return response()->json(['message' => 'No students found in this section'], 404);
+        }
+
+        $submittedCount = 0;
+        $errors = [];
+
+        foreach ($students as $student) {
+            $periodicGrades = PeriodicGrade::where('student_id', $student->student_id)
+                ->where('section_subject_id', $validated['section_subject_id'])
+                ->where('status', 'finalized')
+                ->orderBy('grading_period')
+                ->get();
+
+            // Check if all 3 periods are finalized
+            if ($periodicGrades->count() < 3) {
+                $errors[] = "Student {$student->user->first_name} {$student->user->last_name}: Not all periods finalized";
+                continue;
+            }
+
+            // Calculate final grade as average of 3 periodic grades
+            $period1 = $periodicGrades->where('grading_period', 1)->first()->periodic_grade ?? 0;
+            $period2 = $periodicGrades->where('grading_period', 2)->first()->periodic_grade ?? 0;
+            $period3 = $periodicGrades->where('grading_period', 3)->first()->periodic_grade ?? 0;
+            $finalGrade = round(($period1 + $period2 + $period3) / 3, 2);
+
+            // Create or update final grade record
+            $studentFinalGrade = StudentFinalGrade::firstOrNew([
+                'student_id' => $student->student_id,
+                'section_subject_id' => $validated['section_subject_id'],
+            ]);
+
+            $studentFinalGrade->final_grade = $finalGrade;
+            $studentFinalGrade->status = 'submitted';
+            $studentFinalGrade->save();
+
+            $submittedCount++;
+        }
+
+        if ($submittedCount === 0) {
+            return response()->json([
+                'message' => 'No final grades could be submitted',
+                'errors' => $errors
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => "Final grades submitted for {$submittedCount} students",
+            'submitted_count' => $submittedCount,
+            'errors' => $errors
+        ]);
+    }
+
+    /**
      * Approve a final grade (Admin only).
      * Checks if ALL grading periods (prelims, midterm, finals) are finalized
      * before allowing approval. Triggers GPA recalculation.
