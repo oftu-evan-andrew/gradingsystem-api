@@ -52,7 +52,7 @@ class PeriodicGrade extends Model
 
             if ($finalGradeValue !== null) {
                 $finalGrade = StudentFinalGrade::firstOrNew([
-                    'student_id' => $student->id,
+                    'student_id' => $student->student_id,
                     'section_subject_id' => $sectionSubject->id
                 ]);
 
