@@ -49,11 +49,13 @@ class StudentFinalGradeController extends Controller implements HasMiddleware
     public function index()
     {   
         $professorId = $this->getProfessorId();
+        $sectionSubjectId = request('section_subject_id');
 
         $finalGrades = StudentFinalGrade::with(['student.user', 'sectionSubject.subject'])
             ->when($professorId, fn($q) => $q->whereHas('sectionSubject', fn($sq) => 
                 $sq->where('professor_id', $professorId)
             ))
+            ->when($sectionSubjectId, fn($q) => $q->where('section_subject_id', $sectionSubjectId))
             ->paginate(1000);
         
         return new StudentFinalGradeCollection($finalGrades);
