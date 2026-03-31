@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\StudentFinalGrade;
+use App\Models\PeriodicGrade;
 
 class Student extends Model
 {
@@ -24,5 +26,15 @@ class Student extends Model
     public function section()
     {
         return $this->belongsTo(Section::class, 'section_id');
+    }
+
+    public function studentFinalGrades()
+    {
+        return $this->hasMany(StudentFinalGrade::class, 'student_id');
+    }
+
+    public function periodicGrades()
+    {
+        return $this->hasMany(PeriodicGrade::class, 'student_id');
     }
 }
